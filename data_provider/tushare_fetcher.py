@@ -619,6 +619,42 @@ class TushareFetcher(BaseFetcher):
         
         return None
 
+    def _fetch_daily_market_snapshot_by_trade_date(self, ts: str, fields: str) -> pd.DataFrame:
+        """
+        按单个 ``trade_date`` 拉取全市场 ``daily`` 行。
+
+        Tushare 文档约定单次最多约 6000 条；全市场按日快照可能超过该上限，必须 ``limit/offset``
+        分页拼接后再做成交量/涨跌幅排序，否则 Top N 只在「首屏 6000 行」内有效，结果会失真。
+        """
+        page_size = 6000
+        chunks: List[pd.DataFrame] = []
+        offset = 0
+        max_offset = 200_000  # 安全上限，防止异常循环
+        while offset <= max_offset:
+            df = self._call_api_with_rate_limit(
+                "daily",
+                trade_date=ts,
+                fields=fields,
+                limit=page_size,
+                offset=offset,
+            )
+            if df is None or df.empty:
+                break
+            chunks.append(df)
+            if len(df) < page_size:
+                break
+            offset += page_size
+
+        if not chunks:
+            return pd.DataFrame()
+
+        out = pd.concat(chunks, ignore_index=True)
+        out = out.rename(columns={c: str(c).lower() for c in out.columns})
+        if "ts_code" in out.columns:
+            # 若服务端忽略 offset 导致重复分页，保留最后一条
+            out = out.drop_duplicates(subset=["ts_code"], keep="last")
+        return out
+
     def get_cn_top_movers_universe_from_daily(
         self,
         as_of: date,
@@ -631,7 +667,7 @@ class TushareFetcher(BaseFetcher):
         说明：
         - 与 AkShare 东财全表「实时快照」不同，此处为**指定交易日收盘**涨跌幅（EOD）。
         - ``daily_basic`` 无 ``pct_chg``，不能做涨幅榜；需使用本接口所用的 ``daily``。
-        - 单次最多约 6000 行；A 股全市场约五千余只时通常一次可覆盖。
+        - 全市场拉取在服务端有单次约 6000 行上限，本实现自动分页拼接后再排序。
 
         Args:
             as_of: 交易日（自然日，须为交易所日历上的交易日才有数据）。
@@ -647,10 +683,8 @@ class TushareFetcher(BaseFetcher):
         ts = as_of.strftime("%Y%m%d")
         lim = max(1, min(int(limit or 200), 500))
         try:
-            df = self._call_api_with_rate_limit(
-                "daily",
-                trade_date=ts,
-                fields="ts_code,trade_date,pct_chg,amount",
+            df = self._fetch_daily_market_snapshot_by_trade_date(
+                ts, "ts_code,trade_date,pct_chg,amount"
             )
         except Exception as e:
             logger.warning("[涨幅榜][Tushare] daily 全市场拉取失败 %s: %s", ts, e)
@@ -660,7 +694,7 @@ class TushareFetcher(BaseFetcher):
             logger.warning("[涨幅榜][Tushare] daily 返回空 trade_date=%s", ts)
             return []
 
-        df = df.rename(columns={c: str(c).lower() for c in df.columns})
+        logger.info("[涨幅榜][Tushare] daily 全市场行数=%d trade_date=%s", len(df), ts)
         if "ts_code" not in df.columns or "pct_chg" not in df.columns:
             logger.warning("[涨幅榜][Tushare] daily 缺少必要列: %s", list(df.columns))
             return []
@@ -675,6 +709,7 @@ class TushareFetcher(BaseFetcher):
         if basic is not None and not basic.empty and "name" in basic.columns:
             b = basic[["code", "name"]].copy()
             b["code"] = b["code"].astype(str)
+            b = b.drop_duplicates(subset=["code"], keep="first")
             work["_code"] = work["_code"].astype(str)
             work = work.merge(b, left_on="_code", right_on="code", how="left")
             work["name"] = work["name"].fillna("").astype(str)
@@ -725,10 +760,14 @@ class TushareFetcher(BaseFetcher):
         exclude_st: bool,
     ) -> List[Dict[str, Any]]:
         """
-        使用 Tushare ``daily`` 按 ``vol``（手）降序取成交量领先的全市场 Top N。
+        使用 Tushare ``daily`` 取全市场 Top N：优先按 **成交额 amount（千元）** 降序，
+        **成交额相同**时按 **成交量 vol（手）** 降序。
+
+        全市场 ``daily`` 有单次约 6000 行上限，需分页拉全后再排序（见
+        ``_fetch_daily_market_snapshot_by_trade_date``）。
 
         Returns:
-            ``[{ "code", "name", "trade_volume", "change_pct", "rank" }, ...]``
+            ``[{ "code", "name", "trade_volume", "trade_amount_yi", "change_pct", "rank" }, ...]``
         """
         if self._api is None:
             return []
@@ -736,10 +775,8 @@ class TushareFetcher(BaseFetcher):
         ts = as_of.strftime("%Y%m%d")
         lim = max(1, min(int(limit or 200), 500))
         try:
-            df = self._call_api_with_rate_limit(
-                "daily",
-                trade_date=ts,
-                fields="ts_code,trade_date,vol,pct_chg,amount",
+            df = self._fetch_daily_market_snapshot_by_trade_date(
+                ts, "ts_code,trade_date,vol,pct_chg,amount"
             )
         except Exception as e:
             logger.warning("[成交量榜][Tushare] daily 全市场拉取失败 %s: %s", ts, e)
@@ -749,7 +786,7 @@ class TushareFetcher(BaseFetcher):
             logger.warning("[成交量榜][Tushare] daily 返回空 trade_date=%s", ts)
             return []
 
-        df = df.rename(columns={c: str(c).lower() for c in df.columns})
+        logger.info("[成交量榜][Tushare] daily 全市场行数=%d trade_date=%s", len(df), ts)
         if "ts_code" not in df.columns or "vol" not in df.columns:
             logger.warning("[成交量榜][Tushare] daily 缺少必要列: %s", list(df.columns))
             return []
@@ -765,6 +802,7 @@ class TushareFetcher(BaseFetcher):
         if basic is not None and not basic.empty and "name" in basic.columns:
             b = basic[["code", "name"]].copy()
             b["code"] = b["code"].astype(str)
+            b = b.drop_duplicates(subset=["code"], keep="first")
             work["_code"] = work["_code"].astype(str)
             work = work.merge(b, left_on="_code", right_on="code", how="left")
             work["name"] = work["name"].fillna("").astype(str)
@@ -786,11 +824,27 @@ class TushareFetcher(BaseFetcher):
 
         if "amount" in work.columns:
             work["_amt"] = pd.to_numeric(work["amount"], errors="coerce").fillna(0.0)
-            sort_cols = ["_vol", "_amt"]
+            sort_cols = ["_amt", "_vol"]
         else:
             sort_cols = ["_vol"]
+        # 成交额 amount（千元）降序；成交额相同时成交量 vol（手）降序，再取前 lim 条
         work = work.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
         work = work.head(lim)
+        if len(work):
+            r0 = work.iloc[0]
+            if "_amt" in sort_cols:
+                logger.info(
+                    "[成交量榜][Tushare] 排序: 成交额降序→同额则成交量降序 → head(%d)；第1: amt(千元)=%s vol(手)=%s",
+                    lim,
+                    f"{float(r0['_amt']):g}",
+                    f"{float(r0['_vol']):g}",
+                )
+            else:
+                logger.info(
+                    "[成交量榜][Tushare] 无 amount 列，仅按 vol 降序 → head(%d)；第1: vol(手)=%s",
+                    lim,
+                    f"{float(r0['_vol']):g}",
+                )
 
         out: List[Dict[str, Any]] = []
         for i, (_, row) in enumerate(work.iterrows(), start=1):
@@ -799,11 +853,20 @@ class TushareFetcher(BaseFetcher):
                 continue
             name = str(row.get("name", "") or "").strip()
             pct = row["_pct"]
+            # Tushare daily.amount 为千元；换算为亿元：千元 * 1000 / 1e8 = / 1e5
+            amt_yi = None
+            raw_amt = row.get("amount")
+            if raw_amt is not None and pd.notna(raw_amt):
+                try:
+                    amt_yi = float(raw_amt) / 1e5
+                except (TypeError, ValueError):
+                    amt_yi = None
             out.append(
                 {
                     "code": code,
                     "name": name,
                     "trade_volume": float(row["_vol"]),
+                    "trade_amount_yi": amt_yi,
                     "change_pct": float(pct) if pd.notna(pct) else None,
                     "rank": i,
                 }

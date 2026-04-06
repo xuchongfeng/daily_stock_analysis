@@ -40,3 +40,21 @@ class MarketScanBatchItemsResponse(BaseModel):
     sort_by: str = "sentiment_score"
     order: str = "desc"
     items: List[MarketScanItem] = Field(default_factory=list)
+
+
+class MarketScanResumeResponse(BaseModel):
+    """榜单批次续跑：仅分析该批次尚未写入历史的股票。"""
+
+    skipped: bool = Field(False, description="是否未执行分析（如无待补全、参数错误等）")
+    reason: Optional[str] = Field(None, description="skipped 时的原因码")
+    detail: Optional[str] = Field(None, description="补充说明")
+    batch_run_id: str = ""
+    scan_kind: Optional[str] = None
+    trade_date: Optional[str] = None
+    universe_size: int = 0
+    already_completed_before: int = 0
+    pending_resume: int = Field(0, description="续跑前判定无需补全时可能返回")
+    resume_attempted: int = 0
+    success_count: int = 0
+    failure_count: int = 0
+    notification_sent: bool = False

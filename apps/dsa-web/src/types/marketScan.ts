@@ -33,3 +33,20 @@ export interface MarketScanBatchItemsResponse {
   order: string;
   items: MarketScanItem[];
 }
+
+/** POST /batches/{batch_run_id}/resume 响应（续跑未完成的榜单分析） */
+export interface MarketScanResumeResponse {
+  skipped: boolean;
+  reason?: string | null;
+  detail?: string | null;
+  batchRunId: string;
+  scanKind?: string | null;
+  tradeDate?: string | null;
+  universeSize: number;
+  alreadyCompletedBefore: number;
+  pendingResume: number;
+  resumeAttempted: number;
+  successCount: number;
+  failureCount: number;
+  notificationSent: boolean;
+}

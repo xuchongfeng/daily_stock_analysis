@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] Web「榜单扫描」表格名称列支持跳转雪球个股页（沪深/北交所代码自动拼 `SH`/`SZ`/`BJ` 前缀）。
+- [改进] 日志：在 `setup_logging` / 早期 bootstrap 中将 `LiteLLM`/`litellm` logger 限制为 INFO，避免 DEBUG 模式下流式 delta、Success Call 等刷屏。
+- [改进] 榜单扫描批量任务默认 `TOP_MOVERS_MAX_WORKERS=5`（仍用线程池并发执行 `process_single_stock` 含 LLM，可按环境调大/调小以防限流）。
+- [新功能] 榜单扫描续跑：`POST /api/v1/market-scanner/batches/{batch_run_id}/resume` 仅对当前批次尚未写入历史的股票继续分析（仍使用同一 `batch_run_id`）；Web「榜单扫描」增加「重跑（补全未完成）」。
+- [改进] 成交量榜单股票池排序改为：**成交额降序为主**，成交额相同时**成交量降序**（Tushare `daily` 与东财快照一致）；此前为成交量优先、成交额作并列次序。
+- [修复] 榜单扫描 API / Web：当 `analysis_history.batch_kind` 为空时，仍按 `batch_run_id` 前缀 `tv_`（成交量）/`tm_`（涨幅）识别批次与明细，避免前端「成交量榜」无数据；单股日线日志改为「请求窗口」并注明与 `--market-scan-date` 无关。
+- [修复] Tushare `daily` 按交易日全市场拉取存在单次约 6000 行上限：涨幅榜与成交量榜在排序前改为分页拼接全市场数据，避免 Top N 仅在首屏子集内有效；`stock_basic` 合并前对 `code` 去重，避免异常重复行干扰排序。
 - [新功能] A 股每日涨幅榜 Top N 扫描：`python main.py --top-movers` 基于东财全表取涨跌幅排序股票池，批量 AI 分析并写入 `analysis_history` 的 `batch_kind`/`batch_run_id`/`rank_in_batch`/`ref_change_pct`；提供 `GET /api/v1/top-movers/batches` 与批次明细排序接口、Web `/top-movers` 页；汇总通知由 `TOP_MOVERS_NOTIFY_*` 控制；GitHub Actions `daily_analysis` 增加 `top-movers` 运行模式。
 - [改进] 涨幅榜 CLI 增加 `--top-movers-date YYYY-MM-DD`：按指定日是否为 A 股交易日做开市检查（便于非「今日开市」时仍按某一交易日跑任务），`batch_run_id` 日期前缀与该日一致；GitHub Actions 手动触发可选输入对应参数。
 - [改进] 涨幅榜股票池优先使用 Tushare Pro `daily`（`pct_chg`、按 `trade_date`）；`daily_basic` 无涨跌幅不可用；无 Token 或失败时未指定日期则仍回退东财全表，指定日期则不回退以免与快照语义冲突。

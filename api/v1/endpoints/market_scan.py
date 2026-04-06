@@ -13,7 +13,9 @@ from api.v1.schemas.market_scan import (
     MarketScanBatchListResponse,
     MarketScanBatchSummary,
     MarketScanItem,
+    MarketScanResumeResponse,
 )
+from src.services.market_scan_batch_service import resume_market_scan_batch
 from src.services.market_scan_constants import scan_kind_from_batch_kind
 from src.storage import DatabaseManager
 
@@ -122,3 +124,29 @@ def list_market_scan_batch_items(
     except Exception as exc:
         logger.exception("list_market_scan_batch_items failed: %s", exc)
         raise HTTPException(status_code=500, detail="查询批次明细失败") from exc
+
+
+@router.post(
+    "/batches/{batch_run_id}/resume",
+    response_model=MarketScanResumeResponse,
+    summary="续跑榜单批次（仅补全未分析股票）",
+)
+def resume_market_scan_batch_endpoint(
+    batch_run_id: str,
+    dry_run: bool = Query(False, description="为 True 时只拉数据不跑 LLM"),
+    send_notification: bool = Query(True, description="是否发送续跑汇总通知"),
+) -> MarketScanResumeResponse:
+    """
+    按批次号中的交易日与榜单类型重建股票池，排除该 ``batch_run_id`` 已写入历史的代码，
+    对其余股票继续分析并仍写入同一批次字段。
+    """
+    try:
+        stats = resume_market_scan_batch(
+            batch_run_id,
+            dry_run=dry_run,
+            send_notification=send_notification,
+        )
+        return MarketScanResumeResponse(**stats)
+    except Exception as exc:
+        logger.exception("resume_market_scan_batch failed: %s", exc)
+        raise HTTPException(status_code=500, detail="榜单续跑失败") from exc

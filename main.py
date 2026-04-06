@@ -52,7 +52,7 @@ from typing import List, Tuple
 from data_provider.base import canonical_stock_code
 from src.webui_frontend import prepare_webui_frontend_assets
 from src.config import get_config, Config
-from src.logging_config import setup_logging
+from src.logging_config import apply_litellm_log_noise_reduction, setup_logging
 
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,8 @@ def _setup_bootstrap_logging(debug: bool = False) -> None:
             logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         )
         root.addHandler(handler)
+
+    apply_litellm_log_noise_reduction()
 
 
 def _get_stock_analysis_pipeline():
@@ -764,6 +766,7 @@ def main() -> int:
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             stream=sys.stderr,
         )
+        apply_litellm_log_noise_reduction()
         logger.warning("Bootstrap 日志初始化失败，已回退到 stderr: %s", exc)
 
     # 加载配置（在 bootstrap logging 之后执行，确保异常有日志）

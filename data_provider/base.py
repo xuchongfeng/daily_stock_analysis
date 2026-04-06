@@ -360,7 +360,10 @@ class BaseFetcher(ABC):
             start_date = start_dt.strftime('%Y-%m-%d')
 
         request_start = time.time()
-        logger.info(f"[{self.name}] 开始获取 {stock_code} 日线数据: 范围={start_date} ~ {end_date}")
+        logger.info(
+            f"[{self.name}] 开始获取 {stock_code} 日线数据: "
+            f"请求窗口={start_date}~{end_date}（用于技术指标的 K 线区间，与榜单 --market-scan-date 无关）"
+        )
         
         try:
             # Step 1: 获取原始数据
@@ -380,7 +383,7 @@ class BaseFetcher(ABC):
 
             elapsed = time.time() - request_start
             logger.info(
-                f"[{self.name}] {stock_code} 获取成功: 范围={start_date} ~ {end_date}, "
+                f"[{self.name}] {stock_code} 获取成功: 请求窗口={start_date}~{end_date}, "
                 f"rows={len(df)}, elapsed={elapsed:.2f}s"
             )
             return df
@@ -389,7 +392,7 @@ class BaseFetcher(ABC):
             elapsed = time.time() - request_start
             error_type, error_reason = summarize_exception(e)
             logger.error(
-                f"[{self.name}] {stock_code} 获取失败: 范围={start_date} ~ {end_date}, "
+                f"[{self.name}] {stock_code} 获取失败: 请求窗口={start_date}~{end_date}, "
                 f"error_type={error_type}, elapsed={elapsed:.2f}s, reason={error_reason}"
             )
             raise DataFetchError(f"[{self.name}] {stock_code}: {error_reason}") from e
@@ -1227,10 +1230,11 @@ class DataFetcherManager:
         trade_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
         """
-        按 A 股**成交量**（东财表「成交量」列，或 Tushare ``daily.vol`` 手数）降序取前 N 只。
+        按 A 股**成交额优先**取前 N 只：成交额降序，**相同则成交量**降序。
+        （东财「成交额」+「成交量」；Tushare ``daily.amount``（千元）+ ``vol``（手）。）
 
         数据源优先级与涨幅榜类似：有 Tushare 时用 EOD ``daily``；否则东财全表快照。
-        返回字典含 ``trade_volume``（与数据源单位一致）、可选 ``change_pct``。
+        返回字典含 ``trade_volume``、``trade_amount_yi``、可选 ``change_pct``。
         """
         from src.core.trading_calendar import get_effective_trading_date
         from .akshare_fetcher import AkshareFetcher
@@ -1290,12 +1294,19 @@ class DataFetcherManager:
             work = work[
                 ~work[name_col].astype(str).map(self._is_likely_st_stock_name)
             ]
-        sort_cols = ["_vol"]
         if amt_col in work.columns:
             work["_amt"] = pd.to_numeric(work[amt_col], errors="coerce").fillna(0.0)
-            sort_cols.append("_amt")
+            sort_cols = ["_amt", "_vol"]
+        else:
+            sort_cols = ["_vol"]
+        # 东财：成交额降序；成交额相同时成交量降序，再取前 limit 条
         work = work.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
         work = work.head(limit)
+        logger.info(
+            "[成交量榜] 东财快照排序: %s 降序 → head(%d)",
+            "+".join(sort_cols),
+            limit,
+        )
         out: List[Dict[str, Any]] = []
         for i, (_, row) in enumerate(work.iterrows(), start=1):
             raw_code = str(row[code_col]).strip()
@@ -1307,11 +1318,21 @@ class DataFetcherManager:
             if pct_col in work.columns:
                 p = pd.to_numeric(row.get(pct_col), errors="coerce")
                 pct_val = float(p) if pd.notna(p) else None
+            # 东财快照「成交额」列一般为元；换算为亿元
+            amt_yi = None
+            if amt_col in work.columns:
+                raw_amt = row.get(amt_col)
+                if raw_amt is not None and pd.notna(raw_amt):
+                    try:
+                        amt_yi = float(raw_amt) / 1e8
+                    except (TypeError, ValueError):
+                        amt_yi = None
             out.append(
                 {
                     "code": code,
                     "name": name,
                     "trade_volume": float(row["_vol"]),
+                    "trade_amount_yi": amt_yi,
                     "change_pct": pct_val,
                     "rank": i,
                 }

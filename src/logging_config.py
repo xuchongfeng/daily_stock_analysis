@@ -49,6 +49,16 @@ DEFAULT_QUIET_LOGGERS = [
 ]
 
 
+def apply_litellm_log_noise_reduction(level: int = logging.INFO) -> None:
+    """抑制 LiteLLM 在 DEBUG 下的刷屏（流式 delta、Logging Details Success Call 等）。
+
+    根 logger 为 DEBUG 时，第三方仍会把大量 DEBUG 传到 handler；将 ``LiteLLM`` / ``litellm``
+    的级别抬到 INFO，避免控制台与 *_debug_*.log 被逐 token 淹没。
+    """
+    for name in ("LiteLLM", "litellm"):
+        logging.getLogger(name).setLevel(level)
+
+
 def setup_logging(
     log_prefix: str = "app",
     log_dir: str = "./logs",
@@ -133,6 +143,8 @@ def setup_logging(
 
     for logger_name in quiet_loggers:
         logging.getLogger(logger_name).setLevel(logging.WARNING)
+
+    apply_litellm_log_noise_reduction()
 
     # 输出初始化完成信息（使用相对路径）
     try:

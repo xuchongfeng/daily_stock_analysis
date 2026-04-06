@@ -1428,8 +1428,35 @@ class DatabaseManager:
         else:
             kind_in = list(self._MARKET_SCAN_BATCH_KINDS)
 
+        # batch_kind 为空时，仍可根据批次号前缀识别（tv_=成交量、tm_=涨幅），避免前端筛不到成交量榜
+        from src.services.market_scan_constants import (
+            BATCH_KIND_GAINERS as _BK_G,
+            BATCH_KIND_VOLUME as _BK_V,
+        )
+
+        tm_prefix = AnalysisHistory.batch_run_id.like("tm_%")
+        tv_prefix = AnalysisHistory.batch_run_id.like("tv_%")
+        if sk == "gainers":
+            kind_cond = or_(
+                AnalysisHistory.batch_kind == _BK_G,
+                and_(AnalysisHistory.batch_kind.is_(None), tm_prefix),
+            )
+        elif sk == "volume":
+            kind_cond = or_(
+                AnalysisHistory.batch_kind == _BK_V,
+                and_(AnalysisHistory.batch_kind.is_(None), tv_prefix),
+            )
+        else:
+            kind_cond = or_(
+                AnalysisHistory.batch_kind.in_(kind_in),
+                and_(
+                    AnalysisHistory.batch_kind.is_(None),
+                    or_(tm_prefix, tv_prefix),
+                ),
+            )
+
         conds: List[Any] = [
-            AnalysisHistory.batch_kind.in_(kind_in),
+            kind_cond,
             AnalysisHistory.batch_run_id.isnot(None),
         ]
         if batch_date is not None:
@@ -1457,18 +1484,38 @@ class DatabaseManager:
             )
             rows = session.execute(stmt).all()
             out: List[Dict[str, Any]] = []
+            from src.services.market_scan_constants import infer_batch_kind_from_run_id
+
             for bid, bkind, last_at, cnt in rows:
                 if not bid:
                     continue
+                resolved_bkind = bkind or infer_batch_kind_from_run_id(bid)
                 out.append(
                     {
                         "batch_run_id": bid,
-                        "batch_kind": bkind,
+                        "batch_kind": resolved_bkind,
                         "item_count": int(cnt or 0),
                         "last_created_at": last_at.isoformat() if last_at else None,
                     }
                 )
             return out
+
+    def get_market_scan_completed_codes(self, batch_run_id: str) -> List[str]:
+        """
+        返回该 ``batch_run_id`` 下已在 ``analysis_history`` 中有记录的股票代码（去重）。
+
+        仅成功完成的分析会写入历史；续跑时排除这些代码即可覆盖「未完成」部分。
+        """
+        batch_run_id = (batch_run_id or "").strip()
+        if not batch_run_id:
+            return []
+        with self.get_session() as session:
+            rows = session.execute(
+                select(AnalysisHistory.code)
+                .where(AnalysisHistory.batch_run_id == batch_run_id)
+                .distinct()
+            ).scalars().all()
+        return [str(c).strip() for c in rows if c]
 
     def get_top_mover_batch_items(
         self,
@@ -1514,9 +1561,14 @@ class DatabaseManager:
         }
 
         with self.get_session() as session:
+            tm_p = AnalysisHistory.batch_run_id.like("tm_%")
+            tv_p = AnalysisHistory.batch_run_id.like("tv_%")
             cond = and_(
                 AnalysisHistory.batch_run_id == batch_run_id,
-                AnalysisHistory.batch_kind.in_(list(self._MARKET_SCAN_BATCH_KINDS)),
+                or_(
+                    AnalysisHistory.batch_kind.in_(list(self._MARKET_SCAN_BATCH_KINDS)),
+                    and_(AnalysisHistory.batch_kind.is_(None), or_(tm_p, tv_p)),
+                ),
             )
             total = session.execute(
                 select(func.count(AnalysisHistory.id)).where(cond)

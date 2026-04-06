@@ -15,6 +15,7 @@ import {
 } from '../components/common';
 import { ReportMarkdown } from '../components/report/ReportMarkdown';
 import type { MarketScanBatchSummary, MarketScanItem, MarketScanKindFilter } from '../types/marketScan';
+import { xueqiuStockHref } from '../utils/xueqiu';
 
 const DATE_INPUT_CLASS =
   'h-10 w-full max-w-[11rem] rounded-xl border border-border/60 bg-background px-3 text-sm text-foreground tabular-nums outline-none transition-colors focus-visible:border-[hsl(var(--primary))] focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))]/25';
@@ -44,6 +45,24 @@ function sortOptionsForBatch(batch: MarketScanBatchSummary | undefined) {
   return base;
 }
 
+function marketScanNameCell(code: string, name?: string | null) {
+  const href = xueqiuStockHref(code);
+  const label = name ?? '—';
+  if (href && label !== '—') {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-[hsl(var(--primary))] underline-offset-2 hover:underline"
+      >
+        {label}
+      </a>
+    );
+  }
+  return label;
+}
+
 const MarketScannerPage: React.FC = () => {
   const [loadError, setLoadError] = useState<ParsedApiError | null>(null);
   const [batches, setBatches] = useState<MarketScanBatchSummary[]>([]);
@@ -58,6 +77,8 @@ const MarketScannerPage: React.FC = () => {
   const [order, setOrder] = useState<'asc' | 'desc'>('desc');
   const [itemsLoading, setItemsLoading] = useState(false);
   const [preview, setPreview] = useState<MarketScanItem | null>(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
+  const [resumeHint, setResumeHint] = useState<string | null>(null);
 
   const selectedBatch = useMemo(
     () => batches.find((b) => b.batchRunId === selectedBatchId),
@@ -109,6 +130,42 @@ const MarketScannerPage: React.FC = () => {
     }
   }, [selectedBatchId, sortBy, order, page, limit]);
 
+  const handleResumeBatch = useCallback(async () => {
+    if (!selectedBatchId) {
+      return;
+    }
+    setResumeLoading(true);
+    setResumeHint(null);
+    setLoadError(null);
+    try {
+      const r = await marketScanApi.resumeBatch(selectedBatchId);
+      if (r.skipped) {
+        if (r.reason === 'nothing_to_resume') {
+          setResumeHint(
+            `当前批次无需补全：榜单内标的均已写入分析记录（已记录 ${r.alreadyCompletedBefore} 只，池 ${r.universeSize} 只）。`
+          );
+        } else if (r.reason === 'invalid_batch_run_id') {
+          setResumeHint(r.detail || '批次号格式无效（应为 tm_YYYYMMDD_* 或 tv_YYYYMMDD_*）。');
+        } else if (r.reason === 'empty_universe') {
+          setResumeHint('无法重建该交易日的榜单股票池，请检查数据源与日期。');
+        } else {
+          setResumeHint(r.detail || r.reason || '未执行续跑。');
+        }
+      } else {
+        setResumeHint(
+          `续跑完成：本次尝试 ${r.resumeAttempted} 只，成功 ${r.successCount}，失败 ${r.failureCount}。` +
+            (r.notificationSent ? ' 已发送汇总通知。' : '')
+        );
+      }
+      await loadBatches();
+      await loadItems();
+    } catch (e) {
+      setLoadError(getParsedApiError(e));
+    } finally {
+      setResumeLoading(false);
+    }
+  }, [selectedBatchId, loadBatches, loadItems]);
+
   useEffect(() => {
     void loadBatches();
   }, [loadBatches]);
@@ -120,6 +177,7 @@ const MarketScannerPage: React.FC = () => {
   useEffect(() => {
     setSortBy('sentiment_score');
     setPage(1);
+    setResumeHint(null);
   }, [selectedBatchId]);
 
   const showVolCol = selectedBatch?.scanKind === 'volume';
@@ -267,7 +325,22 @@ const MarketScannerPage: React.FC = () => {
             <Button type="button" variant="secondary" size="sm" onClick={() => void loadItems()}>
               刷新
             </Button>
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={!selectedBatchId || resumeLoading}
+              onClick={() => void handleResumeBatch()}
+            >
+              {resumeLoading ? '续跑中…' : '重跑（补全未完成）'}
+            </Button>
           </div>
+
+          {resumeHint ? (
+            <p className="mb-4 rounded-xl border border-border/60 bg-hover/30 px-3 py-2 text-sm text-foreground">
+              {resumeHint}
+            </p>
+          ) : null}
 
           {!selectedBatchId ? (
             <EmptyState title="请选择批次" />
@@ -296,7 +369,7 @@ const MarketScannerPage: React.FC = () => {
                       <tr key={row.id ?? row.queryId} className="border-t border-border/40">
                         <td className="px-3 py-2 font-mono text-xs">{row.rankInBatch ?? '—'}</td>
                         <td className="px-3 py-2 font-mono">{row.stockCode}</td>
-                        <td className="px-3 py-2">{row.stockName ?? '—'}</td>
+                        <td className="px-3 py-2">{marketScanNameCell(row.stockCode, row.stockName)}</td>
                         {showVolCol ? (
                           <td className="px-3 py-2 font-mono text-xs">
                             {row.refTradeVolume != null ? row.refTradeVolume.toLocaleString() : '—'}
