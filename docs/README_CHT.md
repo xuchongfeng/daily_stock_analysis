@@ -45,6 +45,7 @@
 | 補全 | 智慧補全 (MVP) | **[測試階段]** 首頁搜尋框支援代碼 / 名稱 / 拼音 / 別名聯想；本地索引已覆蓋 A股、港股、美股，並可透過 Tushare 或 AkShare 重新生成 |
 | 復盤 | 大盤復盤 | 每日市場概覽、板塊漲跌、北向資金 |
 | 回測 | AI 回測驗證 | 自動評估歷史分析準確率，方向勝率、止盈止損命中率 |
+| 榜單掃描 | 漲幅／成交量 Top N | 共用 `TOP_MOVERS_*`；`python main.py --market-scan gainers|volume`；Web `/market-scanner` 與 `GET /api/v1/market-scanner/*`（`/top-movers` 相容）；詳見 [market-scanner.md](./market-scanner.md) |
 | **Agent 問股** | **策略對話** | **多輪策略問答，支援 11 種內建策略（Web/Bot/API）** |
 | 推送 | 多渠道通知 | Telegram、Discord、Slack、郵件、企業微信、飛書等 |
 | 自動化 | 定時運行 | GitHub Actions 定時執行，無需伺服器 |

@@ -231,7 +231,13 @@ class StockAnalysisPipeline:
             logger.error(f"{stock_name}({code}) {error_msg}")
             return False, error_msg
     
-    def analyze_stock(self, code: str, report_type: ReportType, query_id: str) -> Optional[AnalysisResult]:
+    def analyze_stock(
+        self,
+        code: str,
+        report_type: ReportType,
+        query_id: str,
+        history_extra: Optional[Dict[str, Any]] = None,
+    ) -> Optional[AnalysisResult]:
         """
         分析单只股票（增强版：含量比、换手率、筹码分析、多维度情报）
         
@@ -370,6 +376,7 @@ class StockAnalysisPipeline:
                     chip_data,
                     fundamental_context,
                     trend_result,
+                    history_extra=history_extra,
                 )
 
             # Step 4: 多维度情报搜索（最新消息+风险排查+业绩预期）
@@ -506,7 +513,12 @@ class StockAnalysisPipeline:
                         report_type=report_type.value,
                         news_content=news_context,
                         context_snapshot=context_snapshot,
-                        save_snapshot=self.save_context_snapshot
+                        save_snapshot=self.save_context_snapshot,
+                        batch_kind=(history_extra or {}).get("batch_kind"),
+                        batch_run_id=(history_extra or {}).get("batch_run_id"),
+                        rank_in_batch=(history_extra or {}).get("rank_in_batch"),
+                        ref_change_pct=(history_extra or {}).get("ref_change_pct"),
+                        ref_trade_volume=(history_extra or {}).get("ref_trade_volume"),
                     )
                 except Exception as e:
                     logger.warning(f"{stock_name}({code}) 保存分析历史失败: {e}")
@@ -745,6 +757,7 @@ class StockAnalysisPipeline:
         chip_data: Optional[ChipDistribution],
         fundamental_context: Optional[Dict[str, Any]] = None,
         trend_result: Optional[TrendAnalysisResult] = None,
+        history_extra: Optional[Dict[str, Any]] = None,
     ) -> Optional[AnalysisResult]:
         """
         使用 Agent 模式分析单只股票。
@@ -853,7 +866,12 @@ class StockAnalysisPipeline:
                         report_type=report_type.value,
                         news_content=None,
                         context_snapshot=initial_context,
-                        save_snapshot=self.save_context_snapshot
+                        save_snapshot=self.save_context_snapshot,
+                        batch_kind=(history_extra or {}).get("batch_kind"),
+                        batch_run_id=(history_extra or {}).get("batch_run_id"),
+                        rank_in_batch=(history_extra or {}).get("rank_in_batch"),
+                        ref_change_pct=(history_extra or {}).get("ref_change_pct"),
+                        ref_trade_volume=(history_extra or {}).get("ref_trade_volume"),
                     )
                 except Exception as e:
                     logger.warning(f"[{code}] 保存 Agent 分析历史失败: {e}")
@@ -1181,6 +1199,7 @@ class StockAnalysisPipeline:
         report_type: ReportType = ReportType.SIMPLE,
         analysis_query_id: Optional[str] = None,
         current_time: Optional[datetime] = None,
+        history_extra: Optional[Dict[str, Any]] = None,
     ) -> Optional[AnalysisResult]:
         """
         处理单只股票的完整流程
@@ -1225,7 +1244,12 @@ class StockAnalysisPipeline:
                 return None
             
             effective_query_id = analysis_query_id or self.query_id or uuid.uuid4().hex
-            result = self.analyze_stock(code, report_type, query_id=effective_query_id)
+            result = self.analyze_stock(
+                code,
+                report_type,
+                query_id=effective_query_id,
+                history_extra=history_extra,
+            )
             
             if result and result.success:
                 logger.info(

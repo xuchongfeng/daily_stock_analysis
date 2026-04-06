@@ -19,7 +19,7 @@ import random
 import time
 from threading import BoundedSemaphore, RLock, Thread
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import date, datetime
 from typing import Callable, Optional, List, Tuple, Dict, Any
 
 import pandas as pd
@@ -1120,7 +1120,204 @@ class DataFetcherManager:
         except Exception as e:
             logger.error(f"[预取] 批量预取异常: {e}")
             return 0
-    
+
+    @staticmethod
+    def _is_likely_st_stock_name(name: str) -> bool:
+        n = (name or "").strip().upper()
+        return n.startswith("ST") or n.startswith("*ST")
+
+    def get_cn_top_movers_universe(
+        self,
+        limit: int = 200,
+        exclude_st: bool = True,
+        trade_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        按 A 股涨跌幅降序取前 N 只（用于每日涨幅榜扫描）。
+
+        数据源优先级：
+        1. **Tushare ``daily``**（需 ``TUSHARE_TOKEN`` 且积分足够）：按交易日全市场 ``pct_chg`` 排序，
+           语义为**该日收盘涨幅**；未传 ``trade_date`` 时使用 ``get_effective_trading_date('cn')``。
+        2. **AkShare 东财全表**（``stock_zh_a_spot_em``）：实时/快照涨跌幅；仅在未指定 ``trade_date`` 且
+           Tushare 不可用时回退。若显式指定了 ``trade_date`` 而 Tushare 失败，则不再回退东财（避免日期不一致）。
+
+        ``daily_basic`` 无涨跌幅字段，不能替代 ``daily`` 做涨幅榜。
+
+        Returns:
+            [{ "code", "name", "change_pct", "rank" }, ...]  rank 为 1-based
+        """
+        from src.core.trading_calendar import get_effective_trading_date
+        from .akshare_fetcher import AkshareFetcher
+        from .tushare_fetcher import TushareFetcher
+
+        limit = max(1, min(int(limit or 200), 500))
+        as_of = trade_date if trade_date is not None else get_effective_trading_date("cn")
+
+        for fetcher in self._get_fetchers_snapshot():
+            if isinstance(fetcher, TushareFetcher) and fetcher.is_available():
+                rows = fetcher.get_cn_top_movers_universe_from_daily(
+                    as_of, limit=limit, exclude_st=exclude_st
+                )
+                if rows:
+                    logger.info(
+                        "[涨幅榜] 使用 Tushare daily（交易日=%s，样本=%d）",
+                        as_of.isoformat(),
+                        len(rows),
+                    )
+                    return rows
+                logger.warning(
+                    "[涨幅榜] Tushare daily 无数据或失败（交易日=%s），%s",
+                    as_of.isoformat(),
+                    "不再使用东财全表（已指定 trade_date）" if trade_date is not None else "将尝试东财全表",
+                )
+                break
+
+        if trade_date is not None:
+            logger.warning("[涨幅榜] 已指定 trade_date 但 Tushare 不可用，跳过东财回退")
+            return []
+
+        df = None
+        for fetcher in self._get_fetchers_snapshot():
+            if isinstance(fetcher, AkshareFetcher):
+                df = fetcher.get_cn_a_spot_em_dataframe()
+                break
+        if df is None or df.empty:
+            logger.warning("[涨幅榜] 东财 A 股全表不可用，榜单为空")
+            return []
+        code_col, name_col, pct_col = "代码", "名称", "涨跌幅"
+        amt_col = "成交额"
+        for col in (code_col, name_col, pct_col):
+            if col not in df.columns:
+                logger.warning("[涨幅榜] 东财表缺少列 %s，无法构建榜单", col)
+                return []
+        work = df[[code_col, name_col, pct_col] + ([amt_col] if amt_col in df.columns else [])].copy()
+        work["_pct"] = pd.to_numeric(work[pct_col], errors="coerce")
+        work = work.dropna(subset=["_pct"])
+        if exclude_st:
+            work = work[
+                ~work[name_col].astype(str).map(self._is_likely_st_stock_name)
+            ]
+        sort_cols = ["_pct"] + (["_amt"] if amt_col in work.columns else [])
+        ascending = [False] * len(sort_cols)
+        if amt_col in work.columns:
+            work["_amt"] = pd.to_numeric(work[amt_col], errors="coerce").fillna(0.0)
+        work = work.sort_values(by=sort_cols, ascending=ascending)
+        work = work.head(limit)
+        out: List[Dict[str, Any]] = []
+        for i, (_, row) in enumerate(work.iterrows(), start=1):
+            raw_code = str(row[code_col]).strip()
+            code = normalize_stock_code(raw_code)
+            if not code:
+                continue
+            name = str(row[name_col]).strip() if row[name_col] is not None else ""
+            out.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "change_pct": float(row["_pct"]),
+                    "rank": i,
+                }
+            )
+        return out
+
+    def get_cn_top_volume_universe(
+        self,
+        limit: int = 200,
+        exclude_st: bool = True,
+        trade_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        按 A 股**成交量**（东财表「成交量」列，或 Tushare ``daily.vol`` 手数）降序取前 N 只。
+
+        数据源优先级与涨幅榜类似：有 Tushare 时用 EOD ``daily``；否则东财全表快照。
+        返回字典含 ``trade_volume``（与数据源单位一致）、可选 ``change_pct``。
+        """
+        from src.core.trading_calendar import get_effective_trading_date
+        from .akshare_fetcher import AkshareFetcher
+        from .tushare_fetcher import TushareFetcher
+
+        limit = max(1, min(int(limit or 200), 500))
+        as_of = trade_date if trade_date is not None else get_effective_trading_date("cn")
+
+        for fetcher in self._get_fetchers_snapshot():
+            if isinstance(fetcher, TushareFetcher) and fetcher.is_available():
+                rows = fetcher.get_cn_top_volume_universe_from_daily(
+                    as_of, limit=limit, exclude_st=exclude_st
+                )
+                if rows:
+                    logger.info(
+                        "[成交量榜] 使用 Tushare daily（交易日=%s，样本=%d）",
+                        as_of.isoformat(),
+                        len(rows),
+                    )
+                    return rows
+                logger.warning(
+                    "[成交量榜] Tushare daily 无数据或失败（交易日=%s），%s",
+                    as_of.isoformat(),
+                    "不再使用东财全表（已指定 trade_date）" if trade_date is not None else "将尝试东财全表",
+                )
+                break
+
+        if trade_date is not None:
+            logger.warning("[成交量榜] 已指定 trade_date 但 Tushare 不可用，跳过东财回退")
+            return []
+
+        df = None
+        for fetcher in self._get_fetchers_snapshot():
+            if isinstance(fetcher, AkshareFetcher):
+                df = fetcher.get_cn_a_spot_em_dataframe()
+                break
+        if df is None or df.empty:
+            logger.warning("[成交量榜] 东财 A 股全表不可用，榜单为空")
+            return []
+
+        code_col, name_col, vol_col = "代码", "名称", "成交量"
+        pct_col = "涨跌幅"
+        amt_col = "成交额"
+        for col in (code_col, name_col, vol_col):
+            if col not in df.columns:
+                logger.warning("[成交量榜] 东财表缺少列 %s，无法构建榜单", col)
+                return []
+        extra = [vol_col]
+        if pct_col in df.columns:
+            extra.append(pct_col)
+        if amt_col in df.columns:
+            extra.append(amt_col)
+        work = df[[code_col, name_col] + extra].copy()
+        work["_vol"] = pd.to_numeric(work[vol_col], errors="coerce")
+        work = work.dropna(subset=["_vol"])
+        if exclude_st:
+            work = work[
+                ~work[name_col].astype(str).map(self._is_likely_st_stock_name)
+            ]
+        sort_cols = ["_vol"]
+        if amt_col in work.columns:
+            work["_amt"] = pd.to_numeric(work[amt_col], errors="coerce").fillna(0.0)
+            sort_cols.append("_amt")
+        work = work.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
+        work = work.head(limit)
+        out: List[Dict[str, Any]] = []
+        for i, (_, row) in enumerate(work.iterrows(), start=1):
+            raw_code = str(row[code_col]).strip()
+            code = normalize_stock_code(raw_code)
+            if not code:
+                continue
+            name = str(row[name_col]).strip() if row[name_col] is not None else ""
+            pct_val = None
+            if pct_col in work.columns:
+                p = pd.to_numeric(row.get(pct_col), errors="coerce")
+                pct_val = float(p) if pd.notna(p) else None
+            out.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "trade_volume": float(row["_vol"]),
+                    "change_pct": pct_val,
+                    "rank": i,
+                }
+            )
+        return out
+
     def get_realtime_quote(self, stock_code: str, *, log_final_failure: bool = True):
         """
         获取实时行情数据（自动故障切换）

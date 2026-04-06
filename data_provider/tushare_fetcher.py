@@ -18,7 +18,7 @@ import json as _json
 import logging
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Tuple, List, Dict, Any
 
 import pandas as pd
@@ -618,7 +618,198 @@ class TushareFetcher(BaseFetcher):
             logger.warning(f"Tushare 获取股票列表失败: {e}")
         
         return None
-    
+
+    def get_cn_top_movers_universe_from_daily(
+        self,
+        as_of: date,
+        limit: int,
+        exclude_st: bool,
+    ) -> List[Dict[str, Any]]:
+        """
+        使用 Tushare Pro ``daily`` 接口按 ``trade_date`` 拉取沪深京全市场日线，用 ``pct_chg`` 排序取涨幅 Top N。
+
+        说明：
+        - 与 AkShare 东财全表「实时快照」不同，此处为**指定交易日收盘**涨跌幅（EOD）。
+        - ``daily_basic`` 无 ``pct_chg``，不能做涨幅榜；需使用本接口所用的 ``daily``。
+        - 单次最多约 6000 行；A 股全市场约五千余只时通常一次可覆盖。
+
+        Args:
+            as_of: 交易日（自然日，须为交易所日历上的交易日才有数据）。
+            limit: 返回条数上限（与外层一致，最大 500）。
+            exclude_st: 是否排除名称以 ST / *ST 开头的标的（依赖 ``stock_basic`` 名称）。
+
+        Returns:
+            ``[{ "code", "name", "change_pct", "rank" }, ...]``；失败或空表返回 ``[]``。
+        """
+        if self._api is None:
+            return []
+
+        ts = as_of.strftime("%Y%m%d")
+        lim = max(1, min(int(limit or 200), 500))
+        try:
+            df = self._call_api_with_rate_limit(
+                "daily",
+                trade_date=ts,
+                fields="ts_code,trade_date,pct_chg,amount",
+            )
+        except Exception as e:
+            logger.warning("[涨幅榜][Tushare] daily 全市场拉取失败 %s: %s", ts, e)
+            return []
+
+        if df is None or df.empty:
+            logger.warning("[涨幅榜][Tushare] daily 返回空 trade_date=%s", ts)
+            return []
+
+        df = df.rename(columns={c: str(c).lower() for c in df.columns})
+        if "ts_code" not in df.columns or "pct_chg" not in df.columns:
+            logger.warning("[涨幅榜][Tushare] daily 缺少必要列: %s", list(df.columns))
+            return []
+
+        work = df.copy()
+        work["_pct"] = pd.to_numeric(work["pct_chg"], errors="coerce")
+        work = work.dropna(subset=["_pct"])
+        work["_code"] = work["ts_code"].astype(str).str.split(".").str[0]
+
+        basic = self.get_stock_list()
+        can_filter_st = bool(exclude_st and basic is not None and not basic.empty)
+        if basic is not None and not basic.empty and "name" in basic.columns:
+            b = basic[["code", "name"]].copy()
+            b["code"] = b["code"].astype(str)
+            work["_code"] = work["_code"].astype(str)
+            work = work.merge(b, left_on="_code", right_on="code", how="left")
+            work["name"] = work["name"].fillna("").astype(str)
+        else:
+            work["name"] = ""
+            if exclude_st:
+                logger.warning(
+                    "[涨幅榜][Tushare] 未获取到 stock_basic，无法按名称排除 ST（trade_date=%s）",
+                    ts,
+                )
+
+        if can_filter_st:
+            work = work[
+                ~work["name"].astype(str).map(
+                    lambda n: str(n).strip().upper().startswith("ST")
+                    or str(n).strip().upper().startswith("*ST")
+                )
+            ]
+
+        if "amount" in work.columns:
+            work["_amt"] = pd.to_numeric(work["amount"], errors="coerce").fillna(0.0)
+            sort_cols: List[str] = ["_pct", "_amt"]
+        else:
+            sort_cols = ["_pct"]
+        work = work.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
+        work = work.head(lim)
+
+        out: List[Dict[str, Any]] = []
+        for i, (_, row) in enumerate(work.iterrows(), start=1):
+            code = normalize_stock_code(str(row["_code"]).strip())
+            if not code:
+                continue
+            name = str(row.get("name", "") or "").strip()
+            out.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "change_pct": float(row["_pct"]),
+                    "rank": i,
+                }
+            )
+        return out
+
+    def get_cn_top_volume_universe_from_daily(
+        self,
+        as_of: date,
+        limit: int,
+        exclude_st: bool,
+    ) -> List[Dict[str, Any]]:
+        """
+        使用 Tushare ``daily`` 按 ``vol``（手）降序取成交量领先的全市场 Top N。
+
+        Returns:
+            ``[{ "code", "name", "trade_volume", "change_pct", "rank" }, ...]``
+        """
+        if self._api is None:
+            return []
+
+        ts = as_of.strftime("%Y%m%d")
+        lim = max(1, min(int(limit or 200), 500))
+        try:
+            df = self._call_api_with_rate_limit(
+                "daily",
+                trade_date=ts,
+                fields="ts_code,trade_date,vol,pct_chg,amount",
+            )
+        except Exception as e:
+            logger.warning("[成交量榜][Tushare] daily 全市场拉取失败 %s: %s", ts, e)
+            return []
+
+        if df is None or df.empty:
+            logger.warning("[成交量榜][Tushare] daily 返回空 trade_date=%s", ts)
+            return []
+
+        df = df.rename(columns={c: str(c).lower() for c in df.columns})
+        if "ts_code" not in df.columns or "vol" not in df.columns:
+            logger.warning("[成交量榜][Tushare] daily 缺少必要列: %s", list(df.columns))
+            return []
+
+        work = df.copy()
+        work["_vol"] = pd.to_numeric(work["vol"], errors="coerce")
+        work = work.dropna(subset=["_vol"])
+        work["_code"] = work["ts_code"].astype(str).str.split(".").str[0]
+        work["_pct"] = pd.to_numeric(work.get("pct_chg"), errors="coerce")
+
+        basic = self.get_stock_list()
+        can_filter_st = bool(exclude_st and basic is not None and not basic.empty)
+        if basic is not None and not basic.empty and "name" in basic.columns:
+            b = basic[["code", "name"]].copy()
+            b["code"] = b["code"].astype(str)
+            work["_code"] = work["_code"].astype(str)
+            work = work.merge(b, left_on="_code", right_on="code", how="left")
+            work["name"] = work["name"].fillna("").astype(str)
+        else:
+            work["name"] = ""
+            if exclude_st:
+                logger.warning(
+                    "[成交量榜][Tushare] 未获取到 stock_basic，无法按名称排除 ST（trade_date=%s）",
+                    ts,
+                )
+
+        if can_filter_st:
+            work = work[
+                ~work["name"].astype(str).map(
+                    lambda n: str(n).strip().upper().startswith("ST")
+                    or str(n).strip().upper().startswith("*ST")
+                )
+            ]
+
+        if "amount" in work.columns:
+            work["_amt"] = pd.to_numeric(work["amount"], errors="coerce").fillna(0.0)
+            sort_cols = ["_vol", "_amt"]
+        else:
+            sort_cols = ["_vol"]
+        work = work.sort_values(by=sort_cols, ascending=[False] * len(sort_cols))
+        work = work.head(lim)
+
+        out: List[Dict[str, Any]] = []
+        for i, (_, row) in enumerate(work.iterrows(), start=1):
+            code = normalize_stock_code(str(row["_code"]).strip())
+            if not code:
+                continue
+            name = str(row.get("name", "") or "").strip()
+            pct = row["_pct"]
+            out.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "trade_volume": float(row["_vol"]),
+                    "change_pct": float(pct) if pd.notna(pct) else None,
+                    "rank": i,
+                }
+            )
+        return out
+
     def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取实时行情

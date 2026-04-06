@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] A 股每日涨幅榜 Top N 扫描：`python main.py --top-movers` 基于东财全表取涨跌幅排序股票池，批量 AI 分析并写入 `analysis_history` 的 `batch_kind`/`batch_run_id`/`rank_in_batch`/`ref_change_pct`；提供 `GET /api/v1/top-movers/batches` 与批次明细排序接口、Web `/top-movers` 页；汇总通知由 `TOP_MOVERS_NOTIFY_*` 控制；GitHub Actions `daily_analysis` 增加 `top-movers` 运行模式。
+- [改进] 涨幅榜 CLI 增加 `--top-movers-date YYYY-MM-DD`：按指定日是否为 A 股交易日做开市检查（便于非「今日开市」时仍按某一交易日跑任务），`batch_run_id` 日期前缀与该日一致；GitHub Actions 手动触发可选输入对应参数。
+- [改进] 涨幅榜股票池优先使用 Tushare Pro `daily`（`pct_chg`、按 `trade_date`）；`daily_basic` 无涨跌幅不可用；无 Token 或失败时未指定日期则仍回退东财全表，指定日期则不回退以免与快照语义冲突。
+- [改进] Web 涨幅榜页支持按交易日筛选批次；`GET /api/v1/top-movers/batches` 增加可选查询参数 `batch_date`（YYYY-MM-DD），按 `tm_YYYYMMDD_*` 匹配 `batch_run_id`。
+- [新功能] 榜单扫描统一模块：新增成交量 Top N（`python main.py --market-scan volume`，`batch_kind=top_volume_daily`，`tv_*` 批次号）；与涨幅榜共用 `TOP_MOVERS_*` 与流水线；`analysis_history` 新增 `ref_trade_volume`；API 主路径 `GET /api/v1/market-scanner/*`（保留 `/top-movers` 兼容）、查询参数 `scan_kind`；Web「榜单扫描」`/market-scanner`；系统设置分类 `market_scan`；GitHub Actions 增加 `top-volume` 模式。
 - [修复] `AGENT_MAX_STEPS` 在 orchestrator 多 Agent 模式下改为作为各子 Agent 的步数上限而非硬覆盖；TechnicalAgent 等高默认值 Agent 会被封顶，低默认值 Agent 保持原值，减少不必要的 LLM 调用膨胀与配额消耗。
 - [修复] **MiniMax-M2.7 模型连接测试支持** — 修复 LLM 通道连接测试在 MiniMax-M2.7 模型下返回 "Empty response" 的问题；增加了 `max_tokens` 上限（8→256）以容纳 MiniMax 思考过程，并添加 `content_blocks` 格式解析逻辑统一处理 MiniMax 响应格式差异。
 - [修复] 移除 `HistoryItem` 与 `ReportSummary` 响应 Schema 中 `sentiment_score` 的 `ge=0/le=100` 约束（fixes #942）——历史库中存储的超范围负值或大于 100 的情绪评分不再触发 Pydantic ValidationError，历史列表与详情接口恢复正常返回。

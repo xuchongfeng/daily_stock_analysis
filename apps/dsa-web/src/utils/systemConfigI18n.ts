@@ -7,6 +7,7 @@ const categoryTitleMap: Record<SystemConfigCategory, string> = {
   notification: '通知渠道',
   system: '系统设置',
   agent: 'Agent 设置',
+  market_scan: '榜单扫描',
   backtest: '回测配置',
   uncategorized: '其他',
 };
@@ -18,6 +19,7 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
   notification: '管理机器人、Webhook 和消息推送配置。',
   system: '管理调度、日志、端口等系统级参数。',
   agent: '管理 Agent 模式、策略与多 Agent 编排配置。',
+  market_scan: '管理涨幅榜与成交量榜批量扫描参数（TOP_MOVERS_*）。',
   backtest: '管理回测开关、评估窗口和引擎参数。',
   uncategorized: '其他未归类的配置项。',
 };

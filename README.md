@@ -41,11 +41,12 @@
 | 基本面 | 结构化聚合 | 新增 `fundamental_context`（valuation/growth/earnings/institution/capital_flow/dragon_tiger/boards，其中 `earnings.data` 新增 `financial_report` 与 `dividend`，`boards` 表示板块涨跌榜），主链路 fail-open 降级 |
 | 策略 | 市场策略系统 | 内置 A股「三段式复盘策略」与美股「Regime Strategy」，输出进攻/均衡/防守或 risk-on/neutral/risk-off 计划，并附“仅供参考，不构成投资建议”提示 |
 | 复盘 | 大盘复盘 | 每日市场概览、板块涨跌；支持 cn(A股)/us(美股)/both(两者) 切换 |
-| 界面 | 双主题工作台 | Web 工作台现支持全新浅色主题与深色主题切换，首页 / 问股 / 回测 / 持仓 / 设置统一升级为同一套视觉与交互体系 |
+| 界面 | 双主题工作台 | Web 工作台现支持全新浅色主题与深色主题切换，首页 / 问股 / 回测 / 持仓 / 榜单扫描 / 设置统一升级为同一套视觉与交互体系 |
 | 补全 | 智能补全 (MVP) | **[测试阶段]** 首页搜索框支持代码/名称/拼音/别名联想；索引已覆盖 A股、港股、美股三个市场，支持通过 Tushare 或 AkShare 数据源更新 |
 | 智能导入 | 多源导入 | 支持图片、CSV/Excel 文件、剪贴板粘贴；Vision LLM 提取代码+名称；置信度分层确认；名称→代码解析（本地+拼音+AkShare） |
 | 历史记录 | 批量管理 | 支持多选、全选及批量删除历史分析记录，优化管理效率与 UI/UX 体验 |
 | 回测 | AI 回测验证 | 自动评估历史分析准确率，支持按股票与分析日期查看“AI 预测 vs 次日实际（1 日窗口）”和准确率 |
+| 榜单扫描 | 涨幅 / 成交量 Top N | 涨幅与成交量两路批量分析共用 `TOP_MOVERS_*`；`python main.py --market-scan gainers|volume`；Web `/market-scanner` 与 `GET /api/v1/market-scanner/*`（`/top-movers` 为兼容路径）；详见 [docs/market-scanner.md](docs/market-scanner.md) |
 | 资讯 | 公司公告 + 资金流 | IntelAgent 新增公告抓取与主力资金流维度（上交所/深交所/cninfo + A 股主力资金流）用于补强舆情链路 |
 | **Agent 问股** | **策略对话** | **多轮策略问答，支持均线金叉/缠论/波浪等 11 种内置策略，Web/Bot/API 全链路** |
 | 推送 | 多渠道通知 | 企业微信、飞书、Telegram、Discord、Slack、钉钉、邮件、Pushover |

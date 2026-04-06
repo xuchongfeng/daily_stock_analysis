@@ -646,7 +646,17 @@ class Config:
     backtest_min_age_days: int = 14
     backtest_engine_version: str = "v1"
     backtest_neutral_band_pct: float = 2.0
-    
+
+    # === 榜单扫描（涨幅 / 成交量 Top N，共用 TOP_MOVERS_*）===
+    top_movers_enabled: bool = False
+    top_movers_limit: int = 200
+    top_movers_max_workers: int = 3
+    top_movers_report_type: str = "simple"
+    top_movers_notify_enabled: bool = True
+    top_movers_notify_top_k: int = 15
+    top_movers_exclude_st: bool = True
+    top_movers_dedupe_watchlist: bool = True
+
     # === 日志配置 ===
     log_dir: str = "./logs"  # 日志文件目录
     log_level: str = "INFO"  # 日志级别
@@ -1301,6 +1311,30 @@ class Config:
                 field_name='BACKTEST_NEUTRAL_BAND_PCT',
                 minimum=0.0,
             ),
+            top_movers_enabled=os.getenv('TOP_MOVERS_ENABLED', 'false').lower() == 'true',
+            top_movers_limit=parse_env_int(
+                os.getenv('TOP_MOVERS_LIMIT'),
+                200,
+                field_name='TOP_MOVERS_LIMIT',
+                minimum=1,
+                maximum=500,
+            ),
+            top_movers_max_workers=parse_env_int(
+                os.getenv('TOP_MOVERS_MAX_WORKERS'),
+                3,
+                field_name='TOP_MOVERS_MAX_WORKERS',
+                minimum=1,
+            ),
+            top_movers_report_type=os.getenv('TOP_MOVERS_REPORT_TYPE', 'simple').strip().lower() or 'simple',
+            top_movers_notify_enabled=os.getenv('TOP_MOVERS_NOTIFY_ENABLED', 'true').lower() == 'true',
+            top_movers_notify_top_k=parse_env_int(
+                os.getenv('TOP_MOVERS_NOTIFY_TOP_K'),
+                15,
+                field_name='TOP_MOVERS_NOTIFY_TOP_K',
+                minimum=1,
+            ),
+            top_movers_exclude_st=os.getenv('TOP_MOVERS_EXCLUDE_ST', 'true').lower() == 'true',
+            top_movers_dedupe_watchlist=os.getenv('TOP_MOVERS_DEDUPE_WATCHLIST', 'true').lower() == 'true',
             log_dir=os.getenv('LOG_DIR', './logs'),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
             max_workers=parse_env_int(os.getenv('MAX_WORKERS'), 3, field_name='MAX_WORKERS', minimum=1),

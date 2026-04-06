@@ -46,6 +46,7 @@ English | [简体中文](../README.md) | [繁體中文](README_CHT.md)
 | Review | Market Review | Daily overview, sectors, northbound capital flow |
 | Intel | Announcement + Capital Flow Intelligence | IntelAgent now also pulls listed-company announcements (SSE/SZSE/CNINFO) and A-share main-force capital flow, and exposes `capital_flow_signal` (`inflow/outflow/neutral/not_available`) for flow direction context |
 | Backtest | AI Backtest Validation | Auto-evaluate historical analysis accuracy, with a 1-day next-session validation view for AI prediction vs actual move and accuracy |
+| Market scanner | Gainers / Volume Top-N | Shared `TOP_MOVERS_*`; `python main.py --market-scan gainers|volume`; Web `/market-scanner` and `GET /api/v1/market-scanner/*` (`/top-movers` alias); see [market-scanner.md](./market-scanner.md) |
 | Agent Q&A | Strategy Chat | Multi-turn strategy chat with 11 built-in trading strategies (internally loaded as skills) (Web/Bot/API) |
 | Notifications | Multi-channel Push | Telegram, Discord, Slack, Email, WeChat Work, Feishu, etc. |
 | Automation | Scheduled Runs | GitHub Actions scheduled execution, no server required |

@@ -46,7 +46,7 @@ import logging
 import sys
 import time
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Tuple
 
 from data_provider.base import canonical_stock_code
@@ -216,6 +216,10 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --single-notify    # 启用单股推送模式（每分析完一只立即推送）
   python main.py --schedule         # 启用定时任务模式
   python main.py --market-review    # 仅运行大盘复盘
+  python main.py --market-scan gainers   # A 股涨幅榜 Top N 批量分析（同 --top-movers）
+  python main.py --market-scan volume    # A 股成交量 Top N 批量分析
+  python main.py --top-movers            # 等价 --market-scan gainers
+  python main.py --market-scan gainers --market-scan-date 2026-04-03
         '''
     )
 
@@ -355,6 +359,44 @@ def parse_arguments() -> argparse.Namespace:
         '--backtest-force',
         action='store_true',
         help='强制回测（即使已有回测结果也重新计算）'
+    )
+
+    parser.add_argument(
+        '--market-scan',
+        choices=['gainers', 'volume'],
+        default=None,
+        dest='market_scan',
+        help='A 股榜单批量分析：gainers=涨幅 Top N，volume=成交量 Top N（与 TOP_MOVERS_* 共用）',
+    )
+
+    parser.add_argument(
+        '--top-movers',
+        action='store_true',
+        help='等价于 --market-scan gainers（保留兼容）',
+    )
+
+    parser.add_argument(
+        '--top-movers-limit',
+        type=int,
+        default=None,
+        help='覆盖 TOP_MOVERS_LIMIT（默认使用配置，最大 500；涨幅与成交量榜单共用）',
+    )
+
+    def _parse_market_scan_date(raw: str) -> date:
+        s = (raw or "").strip()
+        try:
+            return date.fromisoformat(s)
+        except ValueError as e:
+            raise argparse.ArgumentTypeError("须为 YYYY-MM-DD") from e
+
+    parser.add_argument(
+        '--market-scan-date',
+        '--top-movers-date',
+        type=_parse_market_scan_date,
+        default=None,
+        metavar='YYYY-MM-DD',
+        dest='market_scan_date',
+        help='指定 A 股交易日：开市检查与批次号日期段（涨幅 tm_*/成交量 tv_*）；数据源见 docs/market-scanner.md',
     )
 
     return parser.parse_args()
@@ -817,6 +859,28 @@ def main() -> int:
                 f"回测完成: processed={stats.get('processed')} saved={stats.get('saved')} "
                 f"completed={stats.get('completed')} insufficient={stats.get('insufficient')} errors={stats.get('errors')}"
             )
+            return 0
+
+        # 模式0b: 榜单扫描（涨幅 / 成交量）
+        scan_mode = getattr(args, "market_scan", None)
+        if getattr(args, "top_movers", False):
+            scan_mode = "gainers"
+        if scan_mode:
+            from src.services.market_scan_batch_service import run_market_scan_batch
+
+            logger.info("模式: A 股榜单批量分析 (%s)", scan_mode)
+            stats = run_market_scan_batch(
+                config,
+                scan_kind=scan_mode,
+                dry_run=args.dry_run,
+                send_notification=not args.no_notify,
+                force_run=getattr(args, "force_run", False),
+                limit_override=getattr(args, "top_movers_limit", None),
+                max_workers_override=getattr(args, "workers", None),
+                ignore_enabled_flag=True,
+                trade_date=getattr(args, "market_scan_date", None),
+            )
+            logger.info("榜单扫描任务结束: %s", stats)
             return 0
 
         # 模式1: 仅大盘复盘

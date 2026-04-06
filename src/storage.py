@@ -40,8 +40,11 @@ from sqlalchemy import (
     or_,
     delete,
     desc,
+    asc,
+    case,
     event,
     func,
+    text,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import (
@@ -244,6 +247,14 @@ class AnalysisHistory(Base):
     stop_loss = Column(Float)
     take_profit = Column(Float)
 
+    # 批量任务标记（榜单扫描：top_movers_daily / top_volume_daily 等）
+    batch_kind = Column(String(32), nullable=True, index=True)
+    batch_run_id = Column(String(64), nullable=True, index=True)
+    rank_in_batch = Column(Integer, nullable=True)
+    ref_change_pct = Column(Float, nullable=True)
+    # 成交量榜扫描时的参考成交量（东财快照或 Tushare daily 的 vol，单位与数据源一致）
+    ref_trade_volume = Column(Float, nullable=True)
+
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     __table_args__ = (
@@ -269,6 +280,11 @@ class AnalysisHistory(Base):
             'secondary_buy': self.secondary_buy,
             'stop_loss': self.stop_loss,
             'take_profit': self.take_profit,
+            'batch_kind': self.batch_kind,
+            'batch_run_id': self.batch_run_id,
+            'rank_in_batch': self.rank_in_batch,
+            'ref_change_pct': self.ref_change_pct,
+            'ref_trade_volume': self.ref_trade_volume,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -692,6 +708,8 @@ class DatabaseManager:
         # 创建所有表
         Base.metadata.create_all(self._engine)
 
+        self._ensure_sqlite_analysis_history_top_movers_columns()
+
         self._initialized = True
         logger.info(f"数据库初始化完成: {db_url}")
 
@@ -751,6 +769,59 @@ class DatabaseManager:
     def _is_file_sqlite_database(self) -> bool:
         database = (self._engine.url.database or "").strip()
         return bool(database) and database.lower() != ":memory:"
+
+    def _ensure_sqlite_analysis_history_top_movers_columns(self) -> None:
+        """为已有 SQLite 库补齐 analysis_history 榜单扫描批次字段（create_all 不会 ALTER）。"""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(analysis_history)")).fetchall()
+            existing = {r[1] for r in rows}
+            alters: List[str] = []
+            if "batch_kind" not in existing:
+                alters.append(
+                    "ALTER TABLE analysis_history ADD COLUMN batch_kind VARCHAR(32)"
+                )
+            if "batch_run_id" not in existing:
+                alters.append(
+                    "ALTER TABLE analysis_history ADD COLUMN batch_run_id VARCHAR(64)"
+                )
+            if "rank_in_batch" not in existing:
+                alters.append(
+                    "ALTER TABLE analysis_history ADD COLUMN rank_in_batch INTEGER"
+                )
+            if "ref_change_pct" not in existing:
+                alters.append(
+                    "ALTER TABLE analysis_history ADD COLUMN ref_change_pct FLOAT"
+                )
+            if "ref_trade_volume" not in existing:
+                alters.append(
+                    "ALTER TABLE analysis_history ADD COLUMN ref_trade_volume FLOAT"
+                )
+            if alters:
+                with self._engine.begin() as conn:
+                    for stmt in alters:
+                        conn.execute(text(stmt))
+                logger.info(
+                    "SQLite analysis_history 已补齐榜单扫描字段: %s",
+                    [s.split()[-1] for s in alters],
+                )
+            with self._engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_analysis_history_batch_run_id "
+                        "ON analysis_history (batch_run_id)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_analysis_history_batch_kind "
+                        "ON analysis_history (batch_kind)"
+                    )
+                )
+        except Exception as exc:
+            logger.warning("补齐 analysis_history 榜单扫描字段失败（可忽略若已最新）: %s", exc)
 
     def _run_write_transaction(
         self,
@@ -1178,7 +1249,12 @@ class DatabaseManager:
         report_type: str,
         news_content: Optional[str],
         context_snapshot: Optional[Dict[str, Any]] = None,
-        save_snapshot: bool = True
+        save_snapshot: bool = True,
+        batch_kind: Optional[str] = None,
+        batch_run_id: Optional[str] = None,
+        rank_in_batch: Optional[int] = None,
+        ref_change_pct: Optional[float] = None,
+        ref_trade_volume: Optional[float] = None,
     ) -> int:
         """
         保存分析结果历史记录
@@ -1211,6 +1287,11 @@ class DatabaseManager:
                         secondary_buy=sniper_points.get("secondary_buy"),
                         stop_loss=sniper_points.get("stop_loss"),
                         take_profit=sniper_points.get("take_profit"),
+                        batch_kind=batch_kind,
+                        batch_run_id=batch_run_id,
+                        rank_in_batch=rank_in_batch,
+                        ref_change_pct=ref_change_pct,
+                        ref_trade_volume=ref_trade_volume,
                         created_at=datetime.now(),
                     )
                 )
@@ -1318,7 +1399,146 @@ class DatabaseManager:
             results = session.execute(data_query).scalars().all()
             
             return list(results), total
-    
+
+    _MARKET_SCAN_BATCH_KINDS = ("top_movers_daily", "top_volume_daily")
+
+    def list_top_mover_batch_runs(
+        self,
+        limit: int = 30,
+        batch_date: Optional[date] = None,
+        scan_kind: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        列出榜单扫描批次（涨幅 / 成交量等，按批次内最近 created_at 倒序）。
+
+        Args:
+            batch_date: 若指定，按 ``batch_run_id`` 日期段筛选：
+                涨幅批次 ``tm_YYYYMMDD_*``，成交量批次 ``tv_YYYYMMDD_*``。
+            scan_kind: ``gainers`` | ``volume`` | ``all``（默认），对应 ``batch_kind`` 子集。
+
+        Returns:
+            [{ "batch_run_id", "batch_kind", "item_count", "last_created_at" }, ...]
+        """
+        limit = max(1, min(int(limit or 30), 200))
+        sk = (scan_kind or "all").strip().lower()
+        if sk == "gainers":
+            kind_in = ["top_movers_daily"]
+        elif sk == "volume":
+            kind_in = ["top_volume_daily"]
+        else:
+            kind_in = list(self._MARKET_SCAN_BATCH_KINDS)
+
+        conds: List[Any] = [
+            AnalysisHistory.batch_kind.in_(kind_in),
+            AnalysisHistory.batch_run_id.isnot(None),
+        ]
+        if batch_date is not None:
+            day_tag = batch_date.strftime("%Y%m%d")
+            patterns = []
+            if "top_movers_daily" in kind_in:
+                patterns.append(AnalysisHistory.batch_run_id.like(f"tm_{day_tag}_%"))
+            if "top_volume_daily" in kind_in:
+                patterns.append(AnalysisHistory.batch_run_id.like(f"tv_{day_tag}_%"))
+            if patterns:
+                conds.append(or_(*patterns))
+
+        with self.get_session() as session:
+            stmt = (
+                select(
+                    AnalysisHistory.batch_run_id,
+                    func.max(AnalysisHistory.batch_kind).label("bkind"),
+                    func.max(AnalysisHistory.created_at).label("last_at"),
+                    func.count(AnalysisHistory.id).label("cnt"),
+                )
+                .where(and_(*conds))
+                .group_by(AnalysisHistory.batch_run_id)
+                .order_by(desc(func.max(AnalysisHistory.created_at)))
+                .limit(limit)
+            )
+            rows = session.execute(stmt).all()
+            out: List[Dict[str, Any]] = []
+            for bid, bkind, last_at, cnt in rows:
+                if not bid:
+                    continue
+                out.append(
+                    {
+                        "batch_run_id": bid,
+                        "batch_kind": bkind,
+                        "item_count": int(cnt or 0),
+                        "last_created_at": last_at.isoformat() if last_at else None,
+                    }
+                )
+            return out
+
+    def get_top_mover_batch_items(
+        self,
+        batch_run_id: str,
+        sort_by: str = "sentiment_score",
+        order_desc: bool = True,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Tuple[List[AnalysisHistory], int]:
+        """
+        分页查询某一涨幅榜批次内的分析记录。
+
+        Args:
+            batch_run_id: 批次 ID
+            sort_by: sentiment_score | rank_in_batch | created_at | ref_change_pct | ref_trade_volume
+            order_desc: 是否降序
+            offset: 偏移
+            limit: 每页条数
+        """
+        batch_run_id = (batch_run_id or "").strip()
+        if not batch_run_id:
+            return [], 0
+        sort_by = (sort_by or "sentiment_score").strip().lower()
+        allowed = {
+            "sentiment_score",
+            "rank_in_batch",
+            "created_at",
+            "ref_change_pct",
+            "ref_trade_volume",
+        }
+        if sort_by not in allowed:
+            sort_by = "sentiment_score"
+        offset = max(0, int(offset))
+        limit = max(1, min(int(limit or 50), 200))
+
+        order_col = getattr(AnalysisHistory, sort_by)
+        order_fn = desc if order_desc else asc
+        nulls_last = sort_by in {
+            "sentiment_score",
+            "rank_in_batch",
+            "ref_change_pct",
+            "ref_trade_volume",
+        }
+
+        with self.get_session() as session:
+            cond = and_(
+                AnalysisHistory.batch_run_id == batch_run_id,
+                AnalysisHistory.batch_kind.in_(list(self._MARKET_SCAN_BATCH_KINDS)),
+            )
+            total = session.execute(
+                select(func.count(AnalysisHistory.id)).where(cond)
+            ).scalar() or 0
+
+            data_query = select(AnalysisHistory).where(cond)
+            if nulls_last:
+                null_key = case((order_col.is_(None), 1), else_=0)
+                data_query = data_query.order_by(
+                    asc(null_key),
+                    order_fn(order_col),
+                    asc(AnalysisHistory.code),
+                )
+            else:
+                data_query = data_query.order_by(
+                    order_fn(order_col), asc(AnalysisHistory.code)
+                )
+
+            data_query = data_query.offset(offset).limit(limit)
+            results = session.execute(data_query).scalars().all()
+            return list(results), int(total)
+
     def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录

@@ -17,11 +17,18 @@ on:
           - full          # 完整分析（股票+大盘）
           - market-only   # 仅大盘复盘
           - stocks-only   # 仅股票分析
+          - top-movers    # A 股涨幅榜 Top N（需 TOP_MOVERS_ENABLED=true）
+          - top-volume    # A 股成交量 Top N（需 TOP_MOVERS_ENABLED=true）
       force_run:
         description: '强制运行（跳过交易日检查）'
         required: false
         default: false
         type: boolean
+      top_movers_date:
+        description: '榜单扫描可选：--market-scan-date / --top-movers-date（YYYY-MM-DD），留空则不传'
+        required: false
+        default: ''
+        type: string
 
 # 并发控制：同一时间只运行一个分析任务
 concurrency:
@@ -191,6 +198,14 @@ jobs:
           # ==========================================
           LOG_LEVEL: INFO
           MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '1' }}
+          TOP_MOVERS_ENABLED: ${{ vars.TOP_MOVERS_ENABLED || secrets.TOP_MOVERS_ENABLED || 'false' }}
+          TOP_MOVERS_LIMIT: ${{ vars.TOP_MOVERS_LIMIT || secrets.TOP_MOVERS_LIMIT || '200' }}
+          TOP_MOVERS_MAX_WORKERS: ${{ vars.TOP_MOVERS_MAX_WORKERS || secrets.TOP_MOVERS_MAX_WORKERS || '2' }}
+          TOP_MOVERS_REPORT_TYPE: ${{ vars.TOP_MOVERS_REPORT_TYPE || secrets.TOP_MOVERS_REPORT_TYPE || 'simple' }}
+          TOP_MOVERS_NOTIFY_ENABLED: ${{ vars.TOP_MOVERS_NOTIFY_ENABLED || secrets.TOP_MOVERS_NOTIFY_ENABLED || 'true' }}
+          TOP_MOVERS_NOTIFY_TOP_K: ${{ vars.TOP_MOVERS_NOTIFY_TOP_K || secrets.TOP_MOVERS_NOTIFY_TOP_K || '15' }}
+          TOP_MOVERS_EXCLUDE_ST: ${{ vars.TOP_MOVERS_EXCLUDE_ST || secrets.TOP_MOVERS_EXCLUDE_ST || 'true' }}
+          TOP_MOVERS_DEDUPE_WATCHLIST: ${{ vars.TOP_MOVERS_DEDUPE_WATCHLIST || secrets.TOP_MOVERS_DEDUPE_WATCHLIST || 'true' }}
           # 筹码分布：默认 false（云端接口不稳定）；需启用时在 Settings → Variables 添加 ENABLE_CHIP_DISTRIBUTION=true
           ENABLE_CHIP_DISTRIBUTION: ${{ vars.ENABLE_CHIP_DISTRIBUTION || secrets.ENABLE_CHIP_DISTRIBUTION || 'false' }}
           # 实时行情数据源优先级（腾讯有量比且稳定，推荐首选）
@@ -272,11 +287,30 @@ jobs:
             echo "⚡ 已启用强制运行模式（跳过交易日检查）"
           fi
 
+          TOP_MOVERS_DATE_ARG=""
+          TM_DATE_RAW="${{ github.event.inputs.top_movers_date || '' }}"
+          if { [ "$MODE" = "top-movers" ] || [ "$MODE" = "top-volume" ]; } && [ -n "${TM_DATE_RAW// /}" ]; then
+            TOP_MOVERS_DATE_ARG="--market-scan-date ${TM_DATE_RAW// /}"
+            echo "📅 榜单扫描交易日参数: ${TM_DATE_RAW// /}"
+          fi
+
           # 执行分析
           if [ "$MODE" = "market-only" ]; then
             python main.py --market-review $FORCE_RUN_ARG
           elif [ "$MODE" = "stocks-only" ]; then
             python main.py --no-market-review $FORCE_RUN_ARG
+          elif [ "$MODE" = "top-movers" ]; then
+            if [ "${TOP_MOVERS_ENABLED,,}" != "true" ]; then
+              echo "⚠️ TOP_MOVERS_ENABLED 未设为 true，跳过榜单扫描模式。请在 Variables/Secrets 中设置 TOP_MOVERS_ENABLED=true"
+              exit 0
+            fi
+            python main.py --market-scan gainers $FORCE_RUN_ARG $TOP_MOVERS_DATE_ARG
+          elif [ "$MODE" = "top-volume" ]; then
+            if [ "${TOP_MOVERS_ENABLED,,}" != "true" ]; then
+              echo "⚠️ TOP_MOVERS_ENABLED 未设为 true，跳过成交量榜模式。请在 Variables/Secrets 中设置 TOP_MOVERS_ENABLED=true"
+              exit 0
+            fi
+            python main.py --market-scan volume $FORCE_RUN_ARG $TOP_MOVERS_DATE_ARG
           else
             python main.py $FORCE_RUN_ARG
           fi

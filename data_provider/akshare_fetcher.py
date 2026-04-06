@@ -821,7 +821,82 @@ class AkshareFetcher(BaseFetcher):
                 return self._get_stock_realtime_quote_tencent(stock_code)
             else:
                 return self._get_stock_realtime_quote_em(stock_code)
-    
+
+    def _get_shared_cn_a_spot_em_dataframe(self) -> Optional[pd.DataFrame]:
+        """
+        返回东财 A 股全市场实时行情 DataFrame（与单股行情共用模块级缓存）。
+        失败或空表返回 None。
+        """
+        import akshare as ak
+        circuit_breaker = get_realtime_circuit_breaker()
+        source_key = "akshare_em"
+        try:
+            current_time = time.time()
+            if (
+                _realtime_cache["data"] is not None
+                and current_time - _realtime_cache["timestamp"] < _realtime_cache["ttl"]
+            ):
+                df = _realtime_cache["data"]
+                cache_age = int(current_time - _realtime_cache["timestamp"])
+                logger.debug(
+                    f"[缓存命中] A股实时行情(东财) - 缓存年龄 {cache_age}s/{_realtime_cache['ttl']}s"
+                )
+            else:
+                logger.info("[缓存未命中] 触发全量刷新 A股实时行情(东财)")
+                last_error: Optional[Exception] = None
+                df = None
+                for attempt in range(1, 3):
+                    try:
+                        self._set_random_user_agent()
+                        self._enforce_rate_limit()
+                        logger.info(
+                            f"[API调用] ak.stock_zh_a_spot_em() 获取A股实时行情... (attempt {attempt}/2)"
+                        )
+                        import time as _time
+
+                        api_start = _time.time()
+                        df = ak.stock_zh_a_spot_em()
+                        api_elapsed = _time.time() - api_start
+                        logger.info(
+                            f"[API返回] ak.stock_zh_a_spot_em 成功: 返回 {len(df)} 只股票, "
+                            f"耗时 {api_elapsed:.2f}s"
+                        )
+                        circuit_breaker.record_success(source_key)
+                        break
+                    except Exception as e:
+                        last_error = e
+                        logger.info(
+                            f"[API错误] ak.stock_zh_a_spot_em 获取失败 (attempt {attempt}/2): {e}"
+                        )
+                        time.sleep(min(2 ** attempt, 5))
+
+                if df is None:
+                    logger.info(f"[API错误] ak.stock_zh_a_spot_em 最终失败: {last_error}")
+                    circuit_breaker.record_failure(source_key, str(last_error))
+                    df = pd.DataFrame()
+                _realtime_cache["data"] = df
+                _realtime_cache["timestamp"] = current_time
+                logger.info(
+                    f"[缓存更新] A股实时行情(东财) 缓存已刷新，TTL={_realtime_cache['ttl']}s"
+                )
+
+            if df is None or df.empty:
+                return None
+            return df
+        except Exception as e:
+            logger.warning(f"[API错误] 获取东财 A 股全表失败: {e}")
+            circuit_breaker.record_failure(source_key, str(e))
+            return None
+
+    def get_cn_a_spot_em_dataframe(self) -> Optional[pd.DataFrame]:
+        """
+        供涨幅榜等场景使用：返回东财全表副本，避免调用方修改模块缓存。
+        """
+        df = self._get_shared_cn_a_spot_em_dataframe()
+        if df is None or df.empty:
+            return None
+        return df.copy()
+
     def _get_stock_realtime_quote_em(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """
         获取普通 A 股实时行情数据（东方财富数据源）
@@ -830,53 +905,11 @@ class AkshareFetcher(BaseFetcher):
         优点：数据最全，含量比、换手率、市盈率、市净率、总市值、流通市值等
         缺点：全量拉取，数据量大，容易超时/限流
         """
-        import akshare as ak
         circuit_breaker = get_realtime_circuit_breaker()
         source_key = "akshare_em"
         
         try:
-            # 检查缓存
-            current_time = time.time()
-            if (_realtime_cache['data'] is not None and 
-                current_time - _realtime_cache['timestamp'] < _realtime_cache['ttl']):
-                df = _realtime_cache['data']
-                cache_age = int(current_time - _realtime_cache['timestamp'])
-                logger.debug(f"[缓存命中] A股实时行情(东财) - 缓存年龄 {cache_age}s/{_realtime_cache['ttl']}s")
-            else:
-                # 触发全量刷新
-                logger.info(f"[缓存未命中] 触发全量刷新 A股实时行情(东财)")
-                last_error: Optional[Exception] = None
-                df = None
-                for attempt in range(1, 3):
-                    try:
-                        # 防封禁策略
-                        self._set_random_user_agent()
-                        self._enforce_rate_limit()
-
-                        logger.info(f"[API调用] ak.stock_zh_a_spot_em() 获取A股实时行情... (attempt {attempt}/2)")
-                        import time as _time
-                        api_start = _time.time()
-
-                        df = ak.stock_zh_a_spot_em()
-
-                        api_elapsed = _time.time() - api_start
-                        logger.info(f"[API返回] ak.stock_zh_a_spot_em 成功: 返回 {len(df)} 只股票, 耗时 {api_elapsed:.2f}s")
-                        circuit_breaker.record_success(source_key)
-                        break
-                    except Exception as e:
-                        last_error = e
-                        logger.info(f"[API错误] ak.stock_zh_a_spot_em 获取失败 (attempt {attempt}/2): {e}")
-                        time.sleep(min(2 ** attempt, 5))
-
-                # 更新缓存：成功缓存数据；失败也缓存空数据，避免同一轮任务对同一接口反复请求
-                if df is None:
-                    logger.info(f"[API错误] ak.stock_zh_a_spot_em 最终失败: {last_error}")
-                    circuit_breaker.record_failure(source_key, str(last_error))
-                    df = pd.DataFrame()
-                _realtime_cache['data'] = df
-                _realtime_cache['timestamp'] = current_time
-                logger.info(f"[缓存更新] A股实时行情(东财) 缓存已刷新，TTL={_realtime_cache['ttl']}s")
-
+            df = self._get_shared_cn_a_spot_em_dataframe()
             if df is None or df.empty:
                 logger.info(f"[实时行情] A股实时行情数据为空，跳过 {stock_code}")
                 return None
