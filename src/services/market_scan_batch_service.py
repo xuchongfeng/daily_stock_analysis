@@ -24,9 +24,13 @@ from src.services.market_scan_constants import (
     batch_kind_for_scan_kind,
     parse_market_scan_batch_run_id,
 )
-from src.storage import get_db
+from src.notification import NotificationService
+from src.storage import AnalysisHistory, get_db
 
 logger = logging.getLogger(__name__)
+
+# 手动推送「含分析摘要」时，单股 analysis_summary 最大字符数（避免消息过长）
+_MARKET_SCAN_NOTIFY_SUMMARY_MAX_CHARS = 1200
 
 # 兼容旧 import
 TOP_MOVERS_BATCH_KIND = batch_kind_for_scan_kind(SCAN_KIND_GAINERS)
@@ -78,6 +82,178 @@ def _build_summary_markdown(
         )
     lines.extend(["", "> 仅供参考，不构成投资建议。"])
     return "\n".join(lines)
+
+
+def _sanitize_notify_summary_text(text: Optional[str], max_len: int) -> str:
+    if not text:
+        return ""
+    t = text.strip().replace("\r\n", "\n").replace("\r", "\n")
+    t = t.replace("```", "'''")
+    if len(t) > max_len:
+        return t[: max_len - 1] + "…"
+    return t
+
+
+def build_market_scan_notify_markdown(
+    batch_run_id: str,
+    scan_kind: str,
+    rows: List[AnalysisHistory],
+    detail_level: str,
+    *,
+    max_summary_chars: int = _MARKET_SCAN_NOTIFY_SUMMARY_MAX_CHARS,
+) -> str:
+    """
+    根据已落库的榜单批次记录生成通知 Markdown（按调用方已排序、截断后的列表）。
+    ``detail_level``：``summary`` 仅列表行；``detailed`` 每只股票下附 ``analysis_summary`` 摘要。
+    """
+    sk = (scan_kind or SCAN_KIND_GAINERS).strip().lower()
+    if sk == SCAN_KIND_VOLUME:
+        title = "# 📊 A 股成交量榜 AI 扫描（手动推送）"
+        metric_lbl = "当日涨跌"
+    else:
+        title = "# 📈 A 股涨幅榜 AI 扫描（手动推送）"
+        metric_lbl = "当日涨跌"
+
+    dl = (detail_level or "summary").strip().lower()
+    detailed = dl in {"detailed", "detail", "full"}
+
+    lines = [
+        title,
+        "",
+        f"- **批次**: `{batch_run_id}`",
+        f"- **本消息**: Top **{len(rows)}** 只（按评分降序）",
+        "",
+        f"## 股票列表",
+        "",
+    ]
+
+    for r in rows:
+        pct = getattr(r, "ref_change_pct", None)
+        pct_s = f"{pct:+.2f}%" if pct is not None else "—"
+        name = (r.name or r.code or "").strip() or "—"
+        code = (r.code or "").strip() or "—"
+        rank = getattr(r, "rank_in_batch", None)
+        rank_s = str(rank) if rank is not None else "—"
+        score = getattr(r, "sentiment_score", None)
+        score_s = str(score) if score is not None else "—"
+        adv = (r.operation_advice or "—").strip()
+        extra_vol = ""
+        if sk == SCAN_KIND_VOLUME:
+            v = getattr(r, "ref_trade_volume", None)
+            if v is not None:
+                try:
+                    extra_vol = f" | 参考成交量 {float(v):,.0f}"
+                except (TypeError, ValueError):
+                    extra_vol = ""
+        lines.append(
+            f"- **{name}**（`{code}`）名次 **{rank_s}** | 评分 **{score_s}** | "
+            f"{adv} | {metric_lbl} {pct_s}{extra_vol}"
+        )
+        if detailed:
+            snip = _sanitize_notify_summary_text(
+                getattr(r, "analysis_summary", None),
+                max_summary_chars,
+            )
+            if snip:
+                lines.append("")
+                for para in snip.split("\n"):
+                    lines.append(f"> {para}")
+                lines.append("")
+
+    lines.extend(["", "> 仅供参考，不构成投资建议。"])
+    return "\n".join(lines)
+
+
+def send_market_scan_batch_notification(
+    batch_run_id: str,
+    *,
+    top_n: int = 15,
+    detail_level: str = "summary",
+) -> Dict[str, Any]:
+    """
+    从 ``analysis_history`` 读取指定批次的分析记录，按 **AI 评分** 降序取前 ``top_n`` 只，
+    组装 Markdown 后经已配置渠道推送。
+
+    说明：
+    - 与批次跑完时的自动通知不同：此处为 **用户主动触发**，不检查 ``TOP_MOVERS_NOTIFY_ENABLED``；
+      仍要求至少有一个通知渠道可用（与 ``NotificationService`` 一致）。
+    - ``detail_level=detailed`` 会在每只股票下附带 ``analysis_summary``（截断至每只股票上限字符）。
+    """
+    bid = (batch_run_id or "").strip()
+    # 与 ``get_top_mover_batch_items`` 单次上限一致（当前 200）
+    tn = max(1, min(int(top_n), 200))
+    parsed = parse_market_scan_batch_run_id(bid)
+    if not parsed:
+        return {
+            "skipped": True,
+            "reason": "invalid_batch_run_id",
+            "detail": "批次号须为 tm_YYYYMMDD_<8位hex> 或 tv_YYYYMMDD_<8位hex>",
+            "batch_run_id": bid,
+            "notification_sent": False,
+            "items_included": 0,
+            "total_in_batch": 0,
+            "top_n_requested": tn,
+        }
+
+    sk, _trade_date = parsed
+
+    db = get_db()
+    records, total = db.get_top_mover_batch_items(
+        batch_run_id=bid,
+        sort_by="sentiment_score",
+        order_desc=True,
+        offset=0,
+        limit=tn,
+    )
+
+    if not records:
+        return {
+            "skipped": True,
+            "reason": "empty_batch",
+            "detail": "该批次暂无分析记录",
+            "batch_run_id": bid,
+            "scan_kind": sk,
+            "notification_sent": False,
+            "items_included": 0,
+            "total_in_batch": total,
+            "top_n_requested": tn,
+            "detail_level": (detail_level or "summary").strip().lower(),
+        }
+
+    body = build_market_scan_notify_markdown(
+        bid,
+        sk,
+        records,
+        detail_level,
+        max_summary_chars=_MARKET_SCAN_NOTIFY_SUMMARY_MAX_CHARS,
+    )
+    notifier = NotificationService()
+    if not notifier.is_available():
+        return {
+            "skipped": True,
+            "reason": "notifier_unavailable",
+            "detail": "未配置可用的通知渠道",
+            "batch_run_id": bid,
+            "scan_kind": sk,
+            "notification_sent": False,
+            "items_included": len(records),
+            "total_in_batch": total,
+            "top_n_requested": tn,
+            "detail_level": (detail_level or "summary").strip().lower(),
+        }
+
+    ok = bool(notifier.send(body, email_send_to_all=True))
+    dl = (detail_level or "summary").strip().lower()
+    return {
+        "skipped": False,
+        "batch_run_id": bid,
+        "scan_kind": sk,
+        "items_included": len(records),
+        "total_in_batch": total,
+        "notification_sent": ok,
+        "detail_level": dl,
+        "top_n_requested": tn,
+    }
 
 
 def run_market_scan_batch(

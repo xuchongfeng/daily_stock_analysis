@@ -1,9 +1,11 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Legend, Cell } from 'recharts';
+import { analysisApi, DuplicateTaskError } from '../api/analysis';
 import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
+import { pollAnalysisTask } from '../utils/analysisTaskPoll';
 import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert } from '../components/common';
 import { toDateInputValue } from '../utils/format';
 import type {
@@ -26,6 +28,8 @@ import type {
 
 const PIE_COLORS = ['#00d4ff', '#00ff88', '#ffaa00', '#ff7a45', '#7f8cff', '#ff4466'];
 const DEFAULT_PAGE_SIZE = 20;
+/** 与后端 `/api/v1/analysis/analyze` 批量上限一致 */
+const MAX_PORTFOLIO_CHECKUP_STOCKS = 50;
 const FALLBACK_BROKERS: PortfolioImportBrokerItem[] = [
   { broker: 'huatai', aliases: [], displayName: '华泰' },
   { broker: 'citic', aliases: ['zhongxin'], displayName: '中信' },
@@ -44,6 +48,54 @@ type PendingDelete =
   | { eventType: 'trade'; id: number; message: string }
   | { eventType: 'cash'; id: number; message: string }
   | { eventType: 'corporate'; id: number; message: string };
+
+type PortfolioCheckupRow = {
+  symbol: string;
+  status: 'queued' | 'completed' | 'failed' | 'duplicate' | 'error';
+  stockName?: string | null;
+  sentimentScore?: number | null;
+  operationAdvice?: string | null;
+  analysisSummary?: string | null;
+  error?: string | null;
+};
+
+function truncateSummaryText(text: string, maxLen: number): string {
+  const s = (text || '').trim();
+  if (s.length <= maxLen) {
+    return s;
+  }
+  return `${s.slice(0, maxLen)}…`;
+}
+
+/** 后端返回的 stock_code 可能与持仓 symbol 差交易所前缀，用于任务与展示对齐 */
+function portfolioSymbolsLooselyEqual(a: string, b: string): boolean {
+  const x = (a || '').trim().toUpperCase();
+  const y = (b || '').trim().toUpperCase();
+  if (x === y) {
+    return true;
+  }
+  const strip = (s: string) => s.replace(/^(SH|SZ|HK|US|BJ)/, '');
+  return strip(x) === strip(y);
+}
+
+function portfolioCheckupStatusLabel(row: PortfolioCheckupRow, checkupRunning: boolean): string {
+  if (row.status === 'duplicate') {
+    return '跳过(队列中已有)';
+  }
+  if (row.status === 'queued' && checkupRunning) {
+    return '分析中…';
+  }
+  if (row.status === 'queued') {
+    return '排队';
+  }
+  if (row.status === 'completed') {
+    return '完成';
+  }
+  if (row.status === 'failed' || row.status === 'error') {
+    return '失败';
+  }
+  return '—';
+}
 
 type FxRefreshFeedback = {
   tone: 'neutral' | 'success' | 'warning';
@@ -204,6 +256,11 @@ const PortfolioPage: React.FC = () => {
   const [corporateEvents, setCorporateEvents] = useState<PortfolioCorporateActionListItem[]>([]);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const [checkupLoading, setCheckupLoading] = useState(false);
+  const [checkupRows, setCheckupRows] = useState<PortfolioCheckupRow[]>([]);
+  const [checkupBanner, setCheckupBanner] = useState<string | null>(null);
+  const checkupAbortRef = useRef<AbortController | null>(null);
 
   const [tradeForm, setTradeForm] = useState({
     symbol: '',
@@ -436,6 +493,10 @@ const PortfolioPage: React.FC = () => {
     rows.sort((a, b) => Number(b.marketValueBase || 0) - Number(a.marketValueBase || 0));
     return rows;
   }, [snapshot]);
+
+  const checkupUniqueSymbols = useMemo(() => {
+    return Array.from(new Set(positionRows.map((r) => r.symbol.trim()).filter(Boolean)));
+  }, [positionRows]);
 
   const sectorPieData = useMemo(() => {
     const sectors = risk?.sectorConcentration?.topSectors || [];
@@ -752,6 +813,153 @@ const PortfolioPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    return () => {
+      checkupAbortRef.current?.abort();
+    };
+  }, []);
+
+  const handlePortfolioCheckup = useCallback(async () => {
+    const symbols = Array.from(
+      new Set(positionRows.map((r) => r.symbol.trim()).filter(Boolean))
+    );
+    if (symbols.length === 0) {
+      return;
+    }
+
+    const codes = symbols.slice(0, MAX_PORTFOLIO_CHECKUP_STOCKS);
+    const truncated = symbols.length > MAX_PORTFOLIO_CHECKUP_STOCKS;
+
+    checkupAbortRef.current?.abort();
+    const ac = new AbortController();
+    checkupAbortRef.current = ac;
+
+    setCheckupLoading(true);
+    setCheckupRows([]);
+    setCheckupBanner(null);
+
+    try {
+      const resp = await analysisApi.analyzeAsync({
+        stockCodes: codes,
+        reportType: 'simple',
+        notify: false,
+        asyncMode: true,
+        selectionSource: 'manual',
+      });
+
+      const bannerParts: string[] = [];
+      if (truncated) {
+        bannerParts.push(
+          `去重共 ${symbols.length} 只，单次最多 ${MAX_PORTFOLIO_CHECKUP_STOCKS} 只，已分析前 ${MAX_PORTFOLIO_CHECKUP_STOCKS} 只。`
+        );
+      }
+      if ('message' in resp && typeof resp.message === 'string' && resp.message.trim()) {
+        bannerParts.push(resp.message.trim());
+      }
+      setCheckupBanner(bannerParts.length ? bannerParts.join(' ') : null);
+
+      const duplicates = 'duplicates' in resp && resp.duplicates ? resp.duplicates : [];
+      const dupMap = new Map(
+        duplicates.map((d) => [d.stockCode, d.message || '已在分析队列中'] as const)
+      );
+
+      let taskList: { taskId: string; stockCode: string }[] = [];
+      if ('accepted' in resp && Array.isArray(resp.accepted)) {
+        taskList = resp.accepted.map((a) => ({ taskId: a.taskId, stockCode: a.stockCode }));
+      } else if ('taskId' in resp && resp.taskId) {
+        taskList = [{ taskId: resp.taskId, stockCode: codes[0] }];
+      }
+
+      const initialRows: PortfolioCheckupRow[] = codes.map((sym) => {
+        if (dupMap.has(sym)) {
+          return { symbol: sym, status: 'duplicate', error: dupMap.get(sym)! };
+        }
+        const task = taskList.find((t) => portfolioSymbolsLooselyEqual(t.stockCode, sym));
+        if (!task) {
+          return { symbol: sym, status: 'error', error: '未能提交分析任务' };
+        }
+        return { symbol: sym, status: 'queued' };
+      });
+      setCheckupRows(initialRows);
+
+      if (taskList.length === 0) {
+        return;
+      }
+
+      await Promise.all(
+        taskList.map(async ({ taskId, stockCode }) => {
+          const matchRow = (row: PortfolioCheckupRow) => portfolioSymbolsLooselyEqual(row.symbol, stockCode);
+          try {
+            const final = await pollAnalysisTask(taskId, analysisApi.getStatus, {
+              signal: ac.signal,
+              intervalMs: 2000,
+              maxWaitMs: 15 * 60 * 1000,
+            });
+            if (ac.signal.aborted) {
+              return;
+            }
+
+            if (final.status === 'failed') {
+              setCheckupRows((prev) =>
+                prev.map((row) =>
+                  matchRow(row)
+                    ? { ...row, status: 'failed', error: final.error || '分析失败' }
+                    : row
+                )
+              );
+              return;
+            }
+
+            const result = final.result;
+            const summary = result?.report?.summary;
+            if (!result || !summary) {
+              setCheckupRows((prev) =>
+                prev.map((row) =>
+                  matchRow(row)
+                    ? { ...row, status: 'failed', error: '未返回有效报告' }
+                    : row
+                )
+              );
+              return;
+            }
+
+            setCheckupRows((prev) =>
+              prev.map((row) =>
+                matchRow(row)
+                  ? {
+                      ...row,
+                      status: 'completed',
+                      stockName: result.stockName || result.report?.meta?.stockName || null,
+                      sentimentScore: summary.sentimentScore,
+                      operationAdvice: summary.operationAdvice,
+                      analysisSummary: summary.analysisSummary,
+                    }
+                  : row
+              )
+            );
+          } catch (e) {
+            if (ac.signal.aborted) {
+              return;
+            }
+            const msg = e instanceof Error ? e.message : String(e);
+            setCheckupRows((prev) =>
+              prev.map((row) => (matchRow(row) ? { ...row, status: 'error', error: msg } : row))
+            );
+          }
+        })
+      );
+    } catch (e) {
+      if (e instanceof DuplicateTaskError) {
+        setCheckupBanner(e.message);
+        setError(null);
+      } else {
+        setError(getParsedApiError(e));
+      }
+    } finally {
+      setCheckupLoading(false);
+    }
+  }, [positionRows]);
+
   return (
     <div className="portfolio-page min-h-screen space-y-4 p-4 md:p-6">
       <section className="space-y-3">
@@ -1022,6 +1230,78 @@ const PortfolioPage: React.FC = () => {
           </div>
         </Card>
       </section>
+
+      <Card padding="md">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">持仓 AI 体检</h2>
+            <p className="text-xs text-secondary mt-1 max-w-xl">
+              按当前账户视图下的持仓明细去重后，批量异步执行 AI 分析（简易报告），完成后展示评分、操作建议与摘要。单次最多{' '}
+              {MAX_PORTFOLIO_CHECKUP_STOCKS} 只；与首页分析任务共用队列。
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn-secondary text-sm shrink-0"
+            disabled={!hasAccounts || positionRows.length === 0 || checkupLoading}
+            onClick={() => void handlePortfolioCheckup()}
+          >
+            {checkupLoading ? '分析中…' : '开始体检'}
+          </button>
+        </div>
+        {checkupBanner ? (
+          <InlineAlert variant="info" className="mb-3 rounded-lg px-3 py-2 text-xs shadow-none" message={checkupBanner} />
+        ) : null}
+        {checkupRows.length === 0 && !checkupLoading ? (
+          <p className="text-xs text-secondary">
+            {positionRows.length === 0
+              ? '当前无持仓，无法体检。'
+              : `共 ${checkupUniqueSymbols.length} 只不重复标的，可点击「开始体检」。`}
+          </p>
+        ) : null}
+        {checkupRows.length > 0 ? (
+          <div className="overflow-x-auto rounded-xl border border-white/10">
+            <table className="w-full min-w-[880px] text-sm">
+              <thead className="text-xs text-secondary border-b border-white/10">
+                <tr>
+                  <th className="text-left py-2 pr-2">代码</th>
+                  <th className="text-left py-2 pr-2">名称</th>
+                  <th className="text-right py-2 pr-2">AI 评分</th>
+                  <th className="text-left py-2 pr-2">操作建议</th>
+                  <th className="text-left py-2 pr-2">摘要</th>
+                  <th className="text-left py-2">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {checkupRows.map((row) => (
+                  <tr key={row.symbol} className="border-b border-white/5 align-top">
+                    <td className="py-2 pr-2 font-mono text-foreground">{row.symbol}</td>
+                    <td className="py-2 pr-2 text-secondary">{row.stockName ?? '—'}</td>
+                    <td className="py-2 pr-2 text-right">
+                      {row.status === 'completed' && row.sentimentScore != null ? row.sentimentScore : '—'}
+                    </td>
+                    <td className="py-2 pr-2 text-xs text-foreground">
+                      {row.status === 'completed' && row.operationAdvice ? row.operationAdvice : '—'}
+                    </td>
+                    <td className="py-2 pr-2 text-xs text-secondary max-w-[min(28rem,40vw)]">
+                      {row.status === 'completed' && row.analysisSummary ? (
+                        truncateSummaryText(row.analysisSummary, 160)
+                      ) : row.error ? (
+                        <span className="text-danger">{row.error}</span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className="py-2 text-xs text-secondary whitespace-nowrap">
+                      {portfolioCheckupStatusLabel(row, checkupLoading)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </Card>
 
       {writeBlocked && hasAccounts ? (
         <InlineAlert

@@ -50,3 +50,24 @@ export interface MarketScanResumeResponse {
   failureCount: number;
   notificationSent: boolean;
 }
+
+export type MarketScanNotifyDetailLevel = 'summary' | 'detailed';
+
+export interface MarketScanNotifyRequestBody {
+  topN: number;
+  detailLevel: MarketScanNotifyDetailLevel;
+}
+
+/** POST /batches/{batch_run_id}/notify 响应 */
+export interface MarketScanNotifyResponse {
+  skipped: boolean;
+  reason?: string | null;
+  detail?: string | null;
+  batchRunId: string;
+  scanKind?: string | null;
+  itemsIncluded: number;
+  totalInBatch: number;
+  notificationSent: boolean;
+  detailLevel?: string | null;
+  topNRequested: number;
+}

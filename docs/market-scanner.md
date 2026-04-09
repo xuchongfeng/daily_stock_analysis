@@ -76,6 +76,7 @@ python main.py --market-scan volume --dry-run --force-run --top-movers-limit 200
 - `GET .../batches/{batch_run_id}/items?sort_by=...`  
   - `sort_by`: `sentiment_score` | `rank_in_batch` | `created_at` | `ref_change_pct` | `ref_trade_volume`
 - `POST .../batches/{batch_run_id}/resume?dry_run=false&send_notification=true` — **续跑**：按批次内交易日与榜单类型重建股票池，**排除**该 `batch_run_id` 已在 `analysis_history` 落库的代码，对其余标的继续分析并仍写入同一批次；`dry_run=true` 时只拉数据不跑 LLM。Web「榜单扫描」页提供「重跑（补全未完成）」按钮。
+- `POST .../batches/{batch_run_id}/notify` — **手动推送通知**：从 `analysis_history` 读取该批次已落库记录，按 **AI 评分（sentiment_score）降序** 取前 `top_n` 条（请求体 JSON：`top_n` 默认 15、上限 200；`detail_level`：`summary` 仅列表行，`detailed` 每只股票下附带 `analysis_summary` 摘要，单股摘要过长会截断）。与跑批结束时的自动汇总不同：**不依赖** `TOP_MOVERS_NOTIFY_ENABLED`，但仍需已配置至少一种通知渠道。Web「榜单扫描」页提供「推送条数」「通知内容」「发送通知」控件。
 
 续跑使用**当前** `TOP_MOVERS_LIMIT`、去重与排除 ST 等配置重建池子，若与首次跑批时不一致，待补全集合可能与当时略有差异。
 

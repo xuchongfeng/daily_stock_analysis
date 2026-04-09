@@ -64,6 +64,21 @@ vi.mock('../../api/portfolio', () => ({
   },
 }));
 
+vi.mock('../../api/analysis', () => ({
+  analysisApi: {
+    analyzeAsync: vi.fn().mockResolvedValue({
+      accepted: [],
+      duplicates: [],
+      message: '',
+    }),
+    getStatus: vi.fn(),
+  },
+  DuplicateTaskError: class extends Error {
+    stockCode = '';
+    existingTaskId = '';
+  },
+}));
+
 vi.mock('recharts', () => ({
   ResponsiveContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   PieChart: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,

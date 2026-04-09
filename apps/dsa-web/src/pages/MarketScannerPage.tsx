@@ -79,6 +79,10 @@ const MarketScannerPage: React.FC = () => {
   const [preview, setPreview] = useState<MarketScanItem | null>(null);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [resumeHint, setResumeHint] = useState<string | null>(null);
+  const [notifyTopN, setNotifyTopN] = useState(15);
+  const [notifyDetailLevel, setNotifyDetailLevel] = useState<'summary' | 'detailed'>('summary');
+  const [notifyLoading, setNotifyLoading] = useState(false);
+  const [notifyHint, setNotifyHint] = useState<string | null>(null);
 
   const selectedBatch = useMemo(
     () => batches.find((b) => b.batchRunId === selectedBatchId),
@@ -166,6 +170,45 @@ const MarketScannerPage: React.FC = () => {
     }
   }, [selectedBatchId, loadBatches, loadItems]);
 
+  const handleNotifyBatch = useCallback(async () => {
+    if (!selectedBatchId) {
+      return;
+    }
+    const n = Math.min(200, Math.max(1, Math.floor(Number(notifyTopN)) || 15));
+    setNotifyLoading(true);
+    setNotifyHint(null);
+    setLoadError(null);
+    try {
+      const r = await marketScanApi.notifyBatch(selectedBatchId, {
+        topN: n,
+        detailLevel: notifyDetailLevel,
+      });
+      if (r.skipped) {
+        if (r.reason === 'notifier_unavailable') {
+          setNotifyHint('未配置可用通知渠道，请在环境变量中配置微信/飞书/Telegram/邮件等后再试。');
+        } else if (r.reason === 'empty_batch') {
+          setNotifyHint('该批次暂无分析记录，无法推送。');
+        } else if (r.reason === 'invalid_batch_run_id') {
+          setNotifyHint(r.detail || '批次号格式无效。');
+        } else {
+          setNotifyHint(r.detail || r.reason || '未发送。');
+        }
+      } else if (r.notificationSent) {
+        setNotifyHint(
+          `通知已发送：按评分取前 ${r.itemsIncluded} 条（本批次共 ${r.totalInBatch} 条）。`
+        );
+      } else {
+        setNotifyHint(
+          `推送未完成：已选取 ${r.itemsIncluded} 条，请检查服务端通知日志与渠道配置。`
+        );
+      }
+    } catch (e) {
+      setLoadError(getParsedApiError(e));
+    } finally {
+      setNotifyLoading(false);
+    }
+  }, [selectedBatchId, notifyTopN, notifyDetailLevel]);
+
   useEffect(() => {
     void loadBatches();
   }, [loadBatches]);
@@ -178,6 +221,7 @@ const MarketScannerPage: React.FC = () => {
     setSortBy('sentiment_score');
     setPage(1);
     setResumeHint(null);
+    setNotifyHint(null);
   }, [selectedBatchId]);
 
   const showVolCol = selectedBatch?.scanKind === 'volume';
@@ -334,11 +378,52 @@ const MarketScannerPage: React.FC = () => {
             >
               {resumeLoading ? '续跑中…' : '重跑（补全未完成）'}
             </Button>
+            <div className="min-w-[5.5rem]">
+              <label className="mb-1 block text-xs text-secondary-text" htmlFor="market-scan-notify-topn">
+                推送条数
+              </label>
+              <input
+                id="market-scan-notify-topn"
+                type="number"
+                min={1}
+                max={200}
+                value={notifyTopN}
+                onChange={(e) => setNotifyTopN(Number(e.target.value))}
+                className={DATE_INPUT_CLASS}
+                aria-label="通知纳入的股票条数上限"
+              />
+            </div>
+            <div className="min-w-[10rem]">
+              <label className="mb-1 block text-xs text-secondary-text">通知内容</label>
+              <Select
+                value={notifyDetailLevel}
+                onChange={(v) => setNotifyDetailLevel(v as 'summary' | 'detailed')}
+                options={[
+                  { value: 'summary', label: '仅摘要列表' },
+                  { value: 'detailed', label: '含 AI 分析摘要' },
+                ]}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={!selectedBatchId || notifyLoading}
+              onClick={() => void handleNotifyBatch()}
+            >
+              {notifyLoading ? '发送中…' : '发送通知'}
+            </Button>
           </div>
 
           {resumeHint ? (
             <p className="mb-4 rounded-xl border border-border/60 bg-hover/30 px-3 py-2 text-sm text-foreground">
               {resumeHint}
+            </p>
+          ) : null}
+
+          {notifyHint ? (
+            <p className="mb-4 rounded-xl border border-border/60 bg-hover/30 px-3 py-2 text-sm text-foreground">
+              {notifyHint}
             </p>
           ) : null}
 
@@ -351,9 +436,10 @@ const MarketScannerPage: React.FC = () => {
           ) : (
             <>
               <div className="overflow-x-auto rounded-xl border border-border/60">
-                <table className="w-full min-w-[720px] text-left text-sm">
+                <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-hover/50 text-xs text-secondary-text">
                     <tr>
+                      <th className="w-12 px-2 py-2 text-right tabular-nums">序号</th>
                       <th className="px-3 py-2">名次</th>
                       <th className="px-3 py-2">代码</th>
                       <th className="px-3 py-2">名称</th>
@@ -365,8 +451,11 @@ const MarketScannerPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((row) => (
+                    {items.map((row, idx) => (
                       <tr key={row.id ?? row.queryId} className="border-t border-border/40">
+                        <td className="px-2 py-2 text-right font-mono text-xs tabular-nums text-secondary-text">
+                          {(page - 1) * limit + idx + 1}
+                        </td>
                         <td className="px-3 py-2 font-mono text-xs">{row.rankInBatch ?? '—'}</td>
                         <td className="px-3 py-2 font-mono">{row.stockCode}</td>
                         <td className="px-3 py-2">{marketScanNameCell(row.stockCode, row.stockName)}</td>

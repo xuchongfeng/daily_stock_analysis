@@ -5,7 +5,7 @@ import logging
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from api.deps import get_database_manager
 from api.v1.schemas.market_scan import (
@@ -13,9 +13,14 @@ from api.v1.schemas.market_scan import (
     MarketScanBatchListResponse,
     MarketScanBatchSummary,
     MarketScanItem,
+    MarketScanNotifyRequest,
+    MarketScanNotifyResponse,
     MarketScanResumeResponse,
 )
-from src.services.market_scan_batch_service import resume_market_scan_batch
+from src.services.market_scan_batch_service import (
+    resume_market_scan_batch,
+    send_market_scan_batch_notification,
+)
 from src.services.market_scan_constants import scan_kind_from_batch_kind
 from src.storage import DatabaseManager
 
@@ -150,3 +155,31 @@ def resume_market_scan_batch_endpoint(
     except Exception as exc:
         logger.exception("resume_market_scan_batch failed: %s", exc)
         raise HTTPException(status_code=500, detail="榜单续跑失败") from exc
+
+
+@router.post(
+    "/batches/{batch_run_id}/notify",
+    response_model=MarketScanNotifyResponse,
+    summary="手动推送榜单批次通知（自定义 Top N 与是否含分析摘要）",
+)
+def notify_market_scan_batch_endpoint(
+    batch_run_id: str,
+    body: MarketScanNotifyRequest = Body(default_factory=MarketScanNotifyRequest),
+) -> MarketScanNotifyResponse:
+    """
+    从 ``analysis_history`` 读取该批次已落库记录，按 **AI 评分** 降序取前 ``top_n`` 只，
+    组装 Markdown 后走与 CLI 批次相同的通知渠道。
+
+    与跑批结束时的自动汇总通知不同：本接口为 **用户主动触发**，不依赖 ``TOP_MOVERS_NOTIFY_ENABLED``；
+    仍需配置至少一种通知渠道。
+    """
+    try:
+        stats = send_market_scan_batch_notification(
+            batch_run_id,
+            top_n=body.top_n,
+            detail_level=body.detail_level,
+        )
+        return MarketScanNotifyResponse(**stats)
+    except Exception as exc:
+        logger.exception("send_market_scan_batch_notification failed: %s", exc)
+        raise HTTPException(status_code=500, detail="榜单通知发送失败") from exc

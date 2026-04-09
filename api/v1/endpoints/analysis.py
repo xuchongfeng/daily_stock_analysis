@@ -580,18 +580,60 @@ def get_analysis_status(task_id: str) -> TaskStatus:
     # 1. 先从任务队列查询
     task_queue = get_task_queue()
     task = task_queue.get_task(task_id)
-    
+
     if task:
-        return TaskStatus(
-            task_id=task.task_id,
-            status=task.status.value,
-            progress=task.progress,
-            result=None,  # In-progress tasks do not carry a result payload.
-            error=task.error,
-            stock_name=task.stock_name,
-            original_query=task.original_query,
-            selection_source=task.selection_source,
-        )
+        if task.status == TaskStatusEnum.FAILED:
+            return TaskStatus(
+                task_id=task.task_id,
+                status="failed",
+                progress=task.progress,
+                result=None,
+                error=task.error,
+                stock_name=task.stock_name,
+                original_query=task.original_query,
+                selection_source=task.selection_source,
+            )
+
+        # 已完成任务在清理前仍保留在队列中，且内存里有完整 result；必须返回，否则轮询会得到
+        # status=completed 但 result=null（前端无法展示报告摘要）。
+        if task.status == TaskStatusEnum.COMPLETED and getattr(task, "result", None):
+            r = task.result or {}
+            report = r.get("report")
+            if report:
+                return TaskStatus(
+                    task_id=task.task_id,
+                    status="completed",
+                    progress=100,
+                    result=AnalysisResultResponse(
+                        query_id=task.task_id,
+                        stock_code=r.get("stock_code") or task.stock_code,
+                        stock_name=r.get("stock_name") or task.stock_name,
+                        report=report,
+                        created_at=(
+                            task.completed_at.isoformat()
+                            if task.completed_at
+                            else datetime.now().isoformat()
+                        ),
+                    ),
+                    error=None,
+                    stock_name=task.stock_name,
+                    original_query=task.original_query,
+                    selection_source=task.selection_source,
+                )
+            # 已完成但内存中无 report：继续走下方 DB 回退（query_id 即 task_id）
+
+        if task.status in (TaskStatusEnum.PENDING, TaskStatusEnum.PROCESSING):
+            return TaskStatus(
+                task_id=task.task_id,
+                status=task.status.value,
+                progress=task.progress,
+                result=None,
+                error=task.error,
+                stock_name=task.stock_name,
+                original_query=task.original_query,
+                selection_source=task.selection_source,
+            )
+        # 其余情况（如 completed 且无可用内存结果）：由下方 history 查询承接
     
     # 2. 从数据库查询已完成的记录
     try:

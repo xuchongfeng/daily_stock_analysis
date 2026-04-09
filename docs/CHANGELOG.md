@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [修复] `GET /api/v1/analysis/status/{task_id}`：任务已完成但仍保留在内存队列时此前始终返回 `result=null`，导致异步轮询（含 Web「持仓 AI 体检」）拿到「未返回有效报告」；现对队列内 `completed` 且含内存结果的任务返回完整 `report`，无可用内存结果时仍回退 `analysis_history`。
+- [新功能] 榜单扫描：`POST /api/v1/market-scanner/batches/{batch_run_id}/notify` 手动推送批次通知（按评分取 Top N，可选 `detailed` 附带每只股票 `analysis_summary`）；Web「榜单扫描」增加推送条数、摘要/含分析摘要与「发送通知」按钮。
+- [修复] `DatabaseManager`：若首次 `__init__` 中途失败，单例曾处于「半初始化」状态导致后续 `get_session()` 永久报错；现失败时重置单例，且 `get_instance()` 检测到未初始化单例时自动重建。
+- [修复] 系统设置 API：`SystemConfigFieldSchema.category` 补充 `market_scan`，与 `config_registry` 中榜单扫描（TOP_MOVERS_*）分类一致，避免读取配置时 Pydantic 校验失败。
+- [新功能] Web「持仓管理」增加「持仓 AI 体检」：按当前账户视图对持仓代码去重后批量提交异步 AI 分析（`simple` 报告、默认不推送通知），表格展示评分、操作建议与摘要（单次最多 50 只，与 `/api/v1/analysis/analyze` 批量上限一致）。
 - [改进] Web「榜单扫描」表格名称列支持跳转雪球个股页（沪深/北交所代码自动拼 `SH`/`SZ`/`BJ` 前缀）。
 - [改进] 日志：在 `setup_logging` / 早期 bootstrap 中将 `LiteLLM`/`litellm` logger 限制为 INFO，避免 DEBUG 模式下流式 delta、Success Call 等刷屏。
 - [改进] 榜单扫描批量任务默认 `TOP_MOVERS_MAX_WORKERS=5`（仍用线程池并发执行 `process_single_stock` 含 LLM，可按环境调大/调小以防限流）。

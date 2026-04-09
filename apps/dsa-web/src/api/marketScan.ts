@@ -5,6 +5,8 @@ import type {
   MarketScanBatchListResponse,
   MarketScanItem,
   MarketScanKindFilter,
+  MarketScanNotifyRequestBody,
+  MarketScanNotifyResponse,
   MarketScanResumeResponse,
 } from '../types/marketScan';
 
@@ -54,5 +56,19 @@ export const marketScanApi = {
       { params: { dry_run: dryRun, send_notification: sendNotification } }
     );
     return toCamelCase<MarketScanResumeResponse>(response.data);
+  },
+
+  notifyBatch: async (
+    batchRunId: string,
+    body: MarketScanNotifyRequestBody
+  ): Promise<MarketScanNotifyResponse> => {
+    const response = await apiClient.post<Record<string, unknown>>(
+      `${BASE}/batches/${encodeURIComponent(batchRunId)}/notify`,
+      {
+        top_n: body.topN,
+        detail_level: body.detailLevel,
+      }
+    );
+    return toCamelCase<MarketScanNotifyResponse>(response.data);
   },
 };
