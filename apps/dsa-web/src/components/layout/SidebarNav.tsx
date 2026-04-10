@@ -68,9 +68,9 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
             aria-label={label}
             className={({ isActive }) =>
               cn(
-                'group relative flex items-center gap-3 border-y border-x-0 text-sm transition-all',
+                'group relative flex min-w-0 w-full items-stretch border-y border-x-0 text-sm transition-all',
                 'h-[var(--nav-item-height)]',
-                collapsed ? 'justify-center px-0' : 'px-[var(--nav-item-padding-x)]',
+                collapsed ? 'justify-center px-0' : 'gap-1.5 px-2',
                 isActive
                   ? 'border-[var(--nav-active-border)] bg-[var(--nav-active-bg)] text-[hsl(var(--primary))] font-medium'
                   : 'border-transparent text-secondary-text hover:bg-[var(--nav-hover-bg)] hover:text-foreground'
@@ -79,24 +79,43 @@ export const SidebarNav: React.FC<SidebarNavProps> = ({ collapsed = false, onNav
           >
             {({ isActive }) => (
               <>
-                {isActive && (
-                  <motion.div 
+                {!collapsed ? (
+                  <motion.div
                     layoutId="activeIndicator"
-                    className="absolute top-0 bottom-0 left-0 w-[var(--nav-indicator-width)] bg-[var(--nav-indicator-bg)] shadow-[0_0_10px_var(--nav-indicator-shadow)]"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
+                    className={cn(
+                      'my-1 w-[var(--nav-indicator-width)] shrink-0 self-stretch rounded-r-sm',
+                      isActive
+                        ? 'bg-[var(--nav-indicator-bg)] shadow-[0_0_10px_var(--nav-indicator-shadow)]'
+                        : 'pointer-events-none opacity-0',
+                    )}
+                    aria-hidden
+                    initial={false}
                     transition={{ duration: 0.2 }}
                   />
-                )}
-                <Icon className={cn('ml-1 h-5 w-5 shrink-0', isActive ? 'text-[var(--nav-icon-active)]' : 'text-current')} />
-                {!collapsed ? <span className="truncate">{label}</span> : null}
+                ) : null}
+                <span
+                  className={cn(
+                    'flex min-w-0 flex-1 items-center gap-2',
+                    collapsed ? 'justify-center' : '',
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      'h-5 w-5 shrink-0',
+                      isActive ? 'text-[var(--nav-icon-active)]' : 'text-current',
+                    )}
+                  />
+                  {!collapsed ? (
+                    <span className="min-w-0 flex-1 truncate text-left leading-tight">{label}</span>
+                  ) : null}
+                </span>
                 {badge === 'completion' && completionBadge ? (
                   <StatusDot
                     tone="info"
                     data-testid="chat-completion-badge"
                     className={cn(
-                      'absolute right-3 border-2 border-background shadow-[0_0_10px_var(--nav-indicator-shadow)]',
-                      collapsed ? 'right-2 top-2' : ''
+                      'pointer-events-none absolute right-2 top-1/2 z-[3] -translate-y-1/2 border-2 border-background shadow-[0_0_10px_var(--nav-indicator-shadow)]',
+                      collapsed ? 'right-2 top-2 translate-y-0' : '',
                     )}
                     aria-label="问股有新消息"
                   />

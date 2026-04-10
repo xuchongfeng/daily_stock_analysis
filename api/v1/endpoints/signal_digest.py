@@ -38,7 +38,7 @@ router = APIRouter()
         "再按代码归属市场过滤。"
         "使用 batch_only=true 可只聚合榜单扫描批次（batch_run_id 非空）；"
         "advice_filter=buy_or_hold 仅保留建议为买入/加仓/持有/增持等偏多或持有类记录。"
-        "默认使用 SQLite 缓存（SIGNAL_DIGEST_CACHE_TTL_SECONDS，0关闭）；"
+        "默认使用 SQLite 缓存（SIGNAL_DIGEST_CACHE_TTL_SECONDS，默认 12 小时，0关闭）；"
         "refresh=true 跳过缓存强制重算。"
     ),
 )
