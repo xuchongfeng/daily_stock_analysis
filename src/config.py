@@ -657,6 +657,9 @@ class Config:
     top_movers_exclude_st: bool = True
     top_movers_dedupe_watchlist: bool = True
 
+    # 信号摘要 API：SQLite 缓存 TTL（秒），减轻重复聚合与 LLM；0=关闭
+    signal_digest_cache_ttl_seconds: int = 600
+
     # === 日志配置 ===
     log_dir: str = "./logs"  # 日志文件目录
     log_level: str = "INFO"  # 日志级别
@@ -1335,6 +1338,13 @@ class Config:
             ),
             top_movers_exclude_st=os.getenv('TOP_MOVERS_EXCLUDE_ST', 'true').lower() == 'true',
             top_movers_dedupe_watchlist=os.getenv('TOP_MOVERS_DEDUPE_WATCHLIST', 'true').lower() == 'true',
+            signal_digest_cache_ttl_seconds=parse_env_int(
+                os.getenv('SIGNAL_DIGEST_CACHE_TTL_SECONDS'),
+                600,
+                field_name='SIGNAL_DIGEST_CACHE_TTL_SECONDS',
+                minimum=0,
+                maximum=86400,
+            ),
             log_dir=os.getenv('LOG_DIR', './logs'),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
             max_workers=parse_env_int(os.getenv('MAX_WORKERS'), 3, field_name='MAX_WORKERS', minimum=1),

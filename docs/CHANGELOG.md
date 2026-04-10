@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] 信号摘要：SQLite 表 `signal_digest_cache` 缓存 API 响应（`SIGNAL_DIGEST_CACHE_TTL_SECONDS`，默认 600，0 关闭）；查询参数 `use_cache`、`refresh`；响应字段 `from_cache`、`cache_expires_at`；Web「刷新」强制 `refresh=true`。
 - [改进] 信号摘要：支持 `batch_only`（仅榜单扫描批次）与 `advice_filter=buy_or_hold`（仅买入/加仓/持有/增持等偏多或持有类建议）；`exclude_batch` 默认改为 false；Web 默认「仅榜单扫描 + 买入或持有类」；窗口元数据增加 `rows_after_advice_filter`。
 - [新功能] 信号摘要 MVP：`GET /api/v1/insights/signal-digest` 聚合近 N 个交易日 `analysis_history` 规则打分、Top-K、板块共现，可选 LLM 短文；Web 首页改为「信号摘要」，原「每日选股分析」工作台迁至 `/analyze`；`GeminiAnalyzer.generate_text` 支持 `usage_call_type` 区分用量统计。
 - [修复] `GET /api/v1/analysis/status/{task_id}`：任务已完成但仍保留在内存队列时此前始终返回 `result=null`，导致异步轮询（含 Web「持仓 AI 体检」）拿到「未返回有效报告」；现对队列内 `completed` 且含内存结果的任务返回完整 `report`，无可用内存结果时仍回退 `analysis_history`。

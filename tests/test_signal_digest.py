@@ -57,6 +57,7 @@ class SignalDigestApiTest(unittest.TestCase):
                     "STOCK_LIST=600519",
                     "GEMINI_API_KEY=test",
                     "ADMIN_AUTH_ENABLED=false",
+                    "SIGNAL_DIGEST_CACHE_TTL_SECONDS=0",
                     f"DATABASE_PATH={db_path}",
                 ]
             )
@@ -75,6 +76,7 @@ class SignalDigestApiTest(unittest.TestCase):
         Config.reset_instance()
         os.environ.pop("ENV_FILE", None)
         os.environ.pop("DATABASE_PATH", None)
+        os.environ.pop("SIGNAL_DIGEST_CACHE_TTL_SECONDS", None)
         self.temp_dir.cleanup()
 
     @patch("api.v1.endpoints.signal_digest.build_signal_digest")
@@ -217,3 +219,93 @@ class SignalDigestServiceIntegrationTest(unittest.TestCase):
         self.assertEqual(out["window"]["rows_after_advice_filter"], 1)
         self.assertEqual(len(out["picks"]), 1)
         self.assertEqual(out["picks"][0]["code"], "600519")
+
+    def test_compute_cache_key_stable(self) -> None:
+        k1 = sds.compute_signal_digest_cache_key(
+            trading_sessions=14,
+            top_k=10,
+            market_filter="cn",
+            exclude_batch=False,
+            batch_only=True,
+            advice_filter="buy_or_hold",
+            with_narrative=True,
+        )
+        k2 = sds.compute_signal_digest_cache_key(
+            trading_sessions=14,
+            top_k=10,
+            market_filter="cn",
+            exclude_batch=False,
+            batch_only=True,
+            advice_filter="buy_or_hold",
+            with_narrative=True,
+        )
+        self.assertEqual(k1, k2)
+        self.assertEqual(len(k1), 64)
+
+
+class SignalDigestHttpCacheTest(unittest.TestCase):
+    """两次相同请求仅计算一次（SQLite 缓存）。"""
+
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        data_dir = Path(self.temp_dir.name)
+        env_path = data_dir / ".env"
+        db_path = data_dir / "signal_digest_http_cache_test.db"
+        env_path.write_text(
+            "\n".join(
+                [
+                    "STOCK_LIST=600519",
+                    "GEMINI_API_KEY=test",
+                    "ADMIN_AUTH_ENABLED=false",
+                    "SIGNAL_DIGEST_CACHE_TTL_SECONDS=600",
+                    f"DATABASE_PATH={db_path}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.environ["ENV_FILE"] = str(env_path)
+        os.environ["DATABASE_PATH"] = str(db_path)
+        # 覆盖同进程内其它用例可能留下的环境变量（setup_env 会合并 .env 到 os.environ）
+        os.environ["SIGNAL_DIGEST_CACHE_TTL_SECONDS"] = "600"
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        self.app = create_app(static_dir=data_dir / "empty-static")
+        self.client = TestClient(self.app)
+
+    def tearDown(self) -> None:
+        DatabaseManager.reset_instance()
+        Config.reset_instance()
+        os.environ.pop("ENV_FILE", None)
+        os.environ.pop("DATABASE_PATH", None)
+        os.environ.pop("SIGNAL_DIGEST_CACHE_TTL_SECONDS", None)
+        self.temp_dir.cleanup()
+
+    @patch("api.v1.endpoints.signal_digest.build_signal_digest")
+    def test_second_hit_is_cached(self, mock_build: MagicMock) -> None:
+        mock_build.return_value = {
+            "window": {
+                "trading_sessions": 14,
+                "anchor_date": "2026-04-09",
+                "oldest_date": "2026-03-20",
+                "rows_considered": 1,
+                "rows_after_advice_filter": 1,
+                "distinct_stocks": 1,
+                "market_filter": "cn",
+                "exclude_batch": False,
+                "batch_only": False,
+                "advice_filter": "any",
+            },
+            "picks": [],
+            "board_highlights": [],
+            "narrative_markdown": None,
+            "narrative_generated": False,
+        }
+        q = "/api/v1/insights/signal-digest?trading_sessions=14&top_k=10&market=cn"
+        r1 = self.client.get(q)
+        r2 = self.client.get(q)
+        self.assertEqual(r1.status_code, 200, r1.text)
+        self.assertEqual(r2.status_code, 200, r2.text)
+        self.assertEqual(mock_build.call_count, 1)
+        self.assertFalse(r1.json().get("from_cache"))
+        self.assertTrue(r2.json().get("from_cache"))

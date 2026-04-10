@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -85,6 +86,39 @@ def compute_pick_score(
     bias = advice_bias(operation_advice)
     score = base * 0.45 + freq + bias
     return max(0.0, min(score, 100.0))
+
+
+def compute_signal_digest_cache_key(
+    *,
+    trading_sessions: int,
+    top_k: int,
+    market_filter: str,
+    exclude_batch: bool,
+    batch_only: bool,
+    advice_filter: str,
+    with_narrative: bool,
+) -> str:
+    """
+    稳定哈希：参数 + 锚定交易日。锚定日变化（如新交易日）自然使旧缓存失效。
+    """
+    cal_mkt = _calendar_market_for_filter(market_filter)
+    anchor = get_effective_trading_date(cal_mkt)
+    blob = json.dumps(
+        {
+            "anchor_date": anchor.isoformat(),
+            "advice_filter": (advice_filter or "any").strip().lower(),
+            "batch_only": bool(batch_only),
+            "exclude_batch": bool(exclude_batch),
+            "market_filter": (market_filter or "cn").strip().lower(),
+            "top_k": int(top_k),
+            "trading_sessions": int(trading_sessions),
+            "with_narrative": bool(with_narrative),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def _calendar_market_for_filter(market_filter: str) -> str:

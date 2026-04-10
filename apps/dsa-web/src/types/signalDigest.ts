@@ -41,4 +41,6 @@ export type SignalDigestResponse = {
   boardHighlights: SignalDigestBoardHighlight[];
   narrativeMarkdown?: string | null;
   narrativeGenerated: boolean;
+  fromCache?: boolean;
+  cacheExpiresAt?: string | null;
 };

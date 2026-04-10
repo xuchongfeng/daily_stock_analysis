@@ -289,6 +289,21 @@ class AnalysisHistory(Base):
         }
 
 
+class SignalDigestCache(Base):
+    """
+    信号摘要 API 响应缓存（SQLite）。
+
+    按查询维度与锚定交易日生成 cache_key，在 TTL 内复用聚合结果与叙事，减少 DB 与 LLM 压力。
+    """
+
+    __tablename__ = "signal_digest_cache"
+
+    cache_key = Column(String(64), primary_key=True)
+    payload_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+
+
 class BacktestResult(Base):
     """单条分析记录的回测结果。"""
 
@@ -1387,6 +1402,71 @@ class DatabaseManager:
                 .limit(limit)
             ).scalars().all()
             return list(results)
+
+    def get_signal_digest_cache_payload(
+        self,
+        cache_key: str,
+    ) -> Optional[Tuple[Dict[str, Any], datetime]]:
+        """
+        读取未过期的信号摘要缓存。
+
+        Returns:
+            (payload 字典, expires_at) 若命中；过期或损坏则删除行并返回 None。
+        """
+        now = datetime.now()
+        with self.get_session() as session:
+            row = session.execute(
+                select(SignalDigestCache).where(SignalDigestCache.cache_key == cache_key),
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            if row.expires_at < now:
+                session.delete(row)
+                session.commit()
+                return None
+            try:
+                parsed = json.loads(row.payload_json)
+            except (json.JSONDecodeError, TypeError):
+                session.delete(row)
+                session.commit()
+                return None
+            if not isinstance(parsed, dict):
+                session.delete(row)
+                session.commit()
+                return None
+            return parsed, row.expires_at
+
+    def set_signal_digest_cache_payload(
+        self,
+        cache_key: str,
+        payload: Dict[str, Any],
+        ttl_seconds: int,
+    ) -> datetime:
+        """
+        写入信号摘要缓存，并清理已过期的行。返回本次写入的 ``expires_at``。
+        """
+        now = datetime.now()
+        ttl = max(60, min(int(ttl_seconds), 86400))
+        expires = now + timedelta(seconds=ttl)
+        body = json.dumps(payload, ensure_ascii=False)
+
+        def _write(session: Session) -> datetime:
+            session.execute(delete(SignalDigestCache).where(SignalDigestCache.expires_at < now))
+            session.execute(delete(SignalDigestCache).where(SignalDigestCache.cache_key == cache_key))
+            session.add(
+                SignalDigestCache(
+                    cache_key=cache_key,
+                    payload_json=body,
+                    created_at=now,
+                    expires_at=expires,
+                )
+            )
+            return expires
+
+        return self._run_write_transaction(
+            f"signal_digest_cache[{cache_key[:12]}]",
+            _write,
+        )
 
     def get_analysis_history_paginated(
         self,

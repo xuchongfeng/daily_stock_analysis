@@ -49,7 +49,7 @@ const SignalDigestPage: React.FC = () => {
   const [adviceFilter, setAdviceFilter] = useState<'any' | 'buy_or_hold'>('buy_or_hold');
   const [withNarrative, setWithNarrative] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { refresh?: boolean }) => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -61,6 +61,7 @@ const SignalDigestPage: React.FC = () => {
         excludeBatch: recordScope === 'manual',
         adviceFilter,
         withNarrative,
+        refresh: opts?.refresh === true,
       });
       setData(res);
     } catch (e) {
@@ -76,6 +77,10 @@ const SignalDigestPage: React.FC = () => {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  const handleRefresh = useCallback(() => {
+    void load({ refresh: true });
   }, [load]);
 
   const win = data?.window;
@@ -101,7 +106,7 @@ const SignalDigestPage: React.FC = () => {
           variant="secondary"
           className="shrink-0 gap-2"
           disabled={loading}
-          onClick={() => void load()}
+          onClick={handleRefresh}
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           刷新
@@ -194,6 +199,8 @@ const SignalDigestPage: React.FC = () => {
             {win.batchOnly ? ' · 仅榜单批次' : ''}
             {win.excludeBatch ? ' · 已排除批次' : ''}
             {win.adviceFilter === 'buy_or_hold' ? ' · 建议: 买入/持有类' : ''}
+            {data?.fromCache ? ' · 已命中服务端缓存' : ''}
+            {data?.cacheExpiresAt ? ` · 缓存至 ${data.cacheExpiresAt.slice(0, 19).replace('T', ' ')}` : ''}
           </p>
         ) : null}
       </Card>

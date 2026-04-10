@@ -12,6 +12,8 @@ export type SignalDigestQuery = {
   batchOnly?: boolean;
   adviceFilter?: 'any' | 'buy_or_hold';
   withNarrative?: boolean;
+  useCache?: boolean;
+  refresh?: boolean;
 };
 
 export const signalDigestApi = {
@@ -24,6 +26,8 @@ export const signalDigestApi = {
       batchOnly = true,
       adviceFilter = 'buy_or_hold',
       withNarrative = true,
+      useCache = true,
+      refresh = false,
     } = params;
     const response = await apiClient.get<Record<string, unknown>>(BASE, {
       params: {
@@ -34,6 +38,8 @@ export const signalDigestApi = {
         batch_only: batchOnly,
         advice_filter: adviceFilter,
         with_narrative: withNarrative,
+        use_cache: useCache,
+        refresh,
       },
     });
     return toCamelCase<SignalDigestResponse>(response.data);

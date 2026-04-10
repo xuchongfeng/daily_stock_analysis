@@ -4,13 +4,18 @@
 """
 
 import logging
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import get_database_manager
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.signal_digest import SignalDigestResponse
-from src.services.signal_digest_service import build_signal_digest
+from src.config import get_config
+from src.services.signal_digest_service import (
+    build_signal_digest,
+    compute_signal_digest_cache_key,
+)
 from src.storage import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -33,6 +38,8 @@ router = APIRouter()
         "再按代码归属市场过滤。"
         "使用 batch_only=true 可只聚合榜单扫描批次（batch_run_id 非空）；"
         "advice_filter=buy_or_hold 仅保留建议为买入/加仓/持有/增持等偏多或持有类记录。"
+        "默认使用 SQLite 缓存（SIGNAL_DIGEST_CACHE_TTL_SECONDS，0关闭）；"
+        "refresh=true 跳过缓存强制重算。"
     ),
 )
 def get_signal_digest(
@@ -65,6 +72,14 @@ def get_signal_digest(
         True,
         description="是否调用 LLM 生成叙事（失败时仍返回结构化数据）",
     ),
+    use_cache: bool = Query(
+        True,
+        description="是否读写服务端缓存；false 时每次全量计算且不落库缓存",
+    ),
+    refresh: bool = Query(
+        False,
+        description="为 true 时跳过读缓存并重新计算，若 use_cache 仍为 true 则回写缓存",
+    ),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> SignalDigestResponse:
     if exclude_batch and batch_only:
@@ -72,6 +87,30 @@ def get_signal_digest(
             status_code=422,
             detail="exclude_batch 与 batch_only 不能同时为 true",
         )
+    cfg = get_config()
+    ttl = int(getattr(cfg, "signal_digest_cache_ttl_seconds", 0) or 0)
+    cache_key: str | None = None
+    if ttl > 0 and use_cache:
+        cache_key = compute_signal_digest_cache_key(
+            trading_sessions=trading_sessions,
+            top_k=top_k,
+            market_filter=market,
+            exclude_batch=exclude_batch,
+            batch_only=batch_only,
+            advice_filter=advice_filter,
+            with_narrative=with_narrative,
+        )
+        if not refresh:
+            hit = db_manager.get_signal_digest_cache_payload(cache_key)
+            if hit is not None:
+                payload, exp = hit
+                merged = {
+                    **payload,
+                    "from_cache": True,
+                    "cache_expires_at": exp.isoformat(),
+                }
+                return SignalDigestResponse.model_validate(merged)
+
     try:
         payload = build_signal_digest(
             db_manager,
@@ -83,9 +122,26 @@ def get_signal_digest(
             advice_filter=advice_filter,
             with_narrative=with_narrative,
         )
-        return SignalDigestResponse.model_validate(payload)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         logger.exception("signal_digest failed: %s", exc)
         raise HTTPException(status_code=500, detail="signal_digest_failed") from exc
+
+    expires_iso: str | None = None
+    if ttl > 0 and use_cache and cache_key is not None:
+        try:
+            exp = db_manager.set_signal_digest_cache_payload(cache_key, payload, ttl)
+            expires_iso = exp.isoformat()
+        except Exception as exc:
+            logger.warning("signal_digest cache write skipped: %s", exc)
+            expires_iso = (datetime.now() + timedelta(seconds=ttl)).isoformat()
+    else:
+        expires_iso = None
+
+    merged = {
+        **payload,
+        "from_cache": False,
+        "cache_expires_at": expires_iso,
+    }
+    return SignalDigestResponse.model_validate(merged)

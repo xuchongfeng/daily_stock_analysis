@@ -58,3 +58,8 @@ class SignalDigestResponse(BaseModel):
     board_highlights: List[SignalDigestBoardHighlight] = Field(default_factory=list)
     narrative_markdown: Optional[str] = Field(None, description="可选 LLM 生成的 Markdown 短文")
     narrative_generated: bool = Field(False, description="是否成功生成叙事（非空）")
+    from_cache: bool = Field(False, description="是否命中服务端 SQLite 缓存")
+    cache_expires_at: Optional[str] = Field(
+        None,
+        description="缓存失效时间 ISO8601；未启用缓存或强制刷新后首次写入前可能为空",
+    )
