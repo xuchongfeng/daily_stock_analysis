@@ -13,7 +13,7 @@
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional, Set
 from zoneinfo import ZoneInfo
 
@@ -162,6 +162,58 @@ def get_effective_trading_date(
     except Exception as e:
         logger.warning("trading_calendar.get_effective_trading_date fail-open: %s", e)
         return fallback_date
+
+
+def get_session_date_steps_before(
+    market: str,
+    steps: int,
+    anchor: Optional[date] = None,
+) -> date:
+    """
+    Calendar date of the trading session ``steps`` sessions before the anchor session.
+
+    - ``steps=0``: the anchor session's calendar date (normalized via exchange calendar).
+    - ``steps=1``: the previous session's calendar date, etc.
+
+    Fail-open: when exchange-calendars is unavailable or lookup fails, approximates with
+    calendar days (``~2 * steps``) capped at 365 days behind ``anchor``.
+    """
+    if steps < 0:
+        steps = 0
+    anchor = anchor or get_effective_trading_date(market)
+    approx_days = min(365, max(1, steps * 2 + 1))
+    if not _XCALS_AVAILABLE:
+        return anchor - timedelta(days=approx_days)
+
+    ex = MARKET_EXCHANGE.get(market or "")
+    if not ex:
+        return anchor - timedelta(days=approx_days)
+
+    try:
+        cal = xcals.get_calendar(ex)
+        session = cal.date_to_session(anchor, direction="previous")
+        for _ in range(steps):
+            session = cal.previous_session(session)
+        return session.date()
+    except Exception as e:
+        logger.warning("trading_calendar.get_session_date_steps_before fail-open: %s", e)
+        return anchor - timedelta(days=approx_days)
+
+
+def get_oldest_date_in_trading_window(
+    market: str,
+    trading_sessions: int,
+    anchor: Optional[date] = None,
+) -> date:
+    """
+    Oldest calendar date included in a window of ``trading_sessions`` sessions ending at anchor.
+
+    Example: ``trading_sessions=14`` includes the anchor session and the 13 prior sessions.
+    """
+    n = max(1, int(trading_sessions))
+    anchor_date = anchor or get_effective_trading_date(market)
+    steps = n - 1
+    return get_session_date_steps_before(market, steps, anchor_date)
 
 
 def get_open_markets_today() -> Set[str]:

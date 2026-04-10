@@ -1236,6 +1236,8 @@ class GeminiAnalyzer:
         prompt: str,
         max_tokens: int = 2048,
         temperature: float = 0.7,
+        *,
+        usage_call_type: str = "market_review",
     ) -> Optional[str]:
         """Public entry point for free-form text generation.
 
@@ -1247,6 +1249,7 @@ class GeminiAnalyzer:
             prompt:      Text prompt to send to the LLM.
             max_tokens:  Maximum tokens in the response (default 2048).
             temperature: Sampling temperature (default 0.7).
+            usage_call_type: Label stored with LLM usage rows (default ``market_review``).
 
         Returns:
             Response text, or None if the LLM call fails (error is logged).
@@ -1258,7 +1261,7 @@ class GeminiAnalyzer:
             )
             if isinstance(result, tuple):
                 text, model_used, usage = result
-                persist_llm_usage(usage, model_used, call_type="market_review")
+                persist_llm_usage(usage, model_used, call_type=usage_call_type)
                 return text
             return result
         except Exception as exc:

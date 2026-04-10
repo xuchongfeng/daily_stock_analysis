@@ -22,6 +22,7 @@ from api.v1.endpoints import (
     usage,
     portfolio,
     market_scan,
+    signal_digest,
 )
 
 # 创建 v1 版本主路由
@@ -90,4 +91,10 @@ router.include_router(
     market_scan.router,
     prefix="/top-movers",
     tags=["榜单扫描(兼容)"],
+)
+
+router.include_router(
+    signal_digest.router,
+    prefix="/insights/signal-digest",
+    tags=["Insights"],
 )

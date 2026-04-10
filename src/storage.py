@@ -1355,7 +1355,39 @@ class DatabaseManager:
             ).scalars().all()
 
             return list(results)
-    
+
+    def list_analysis_history_since(
+        self,
+        since: datetime,
+        *,
+        exclude_batch: bool = False,
+        batch_only: bool = False,
+        limit: int = 200_000,
+    ) -> List[AnalysisHistory]:
+        """
+        Bulk-fetch analysis_history rows with ``created_at >= since``.
+
+        Used for rolling-window aggregations (e.g. signal digest). ``limit`` caps rows
+        returned for safety on large databases.
+
+        ``batch_only=True`` restricts to rows with a non-null ``batch_run_id`` (e.g. 榜单扫描).
+        Do not combine with ``exclude_batch=True``; callers should validate.
+        """
+        limit = max(1, min(int(limit or 200_000), 500_000))
+        with self.get_session() as session:
+            conditions = [AnalysisHistory.created_at >= since]
+            if batch_only:
+                conditions.append(AnalysisHistory.batch_run_id.isnot(None))
+            elif exclude_batch:
+                conditions.append(AnalysisHistory.batch_run_id.is_(None))
+            results = session.execute(
+                select(AnalysisHistory)
+                .where(and_(*conditions))
+                .order_by(desc(AnalysisHistory.created_at))
+                .limit(limit)
+            ).scalars().all()
+            return list(results)
+
     def get_analysis_history_paginated(
         self,
         code: Optional[str] = None,
