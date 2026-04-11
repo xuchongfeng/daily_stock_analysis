@@ -199,7 +199,7 @@ jobs:
           LOG_LEVEL: INFO
           MAX_WORKERS: ${{ vars.MAX_WORKERS || secrets.MAX_WORKERS || '1' }}
           TOP_MOVERS_ENABLED: ${{ vars.TOP_MOVERS_ENABLED || secrets.TOP_MOVERS_ENABLED || 'false' }}
-          TOP_MOVERS_LIMIT: ${{ vars.TOP_MOVERS_LIMIT || secrets.TOP_MOVERS_LIMIT || '200' }}
+          TOP_MOVERS_LIMIT: ${{ vars.TOP_MOVERS_LIMIT || secrets.TOP_MOVERS_LIMIT || '1000' }}
           TOP_MOVERS_MAX_WORKERS: ${{ vars.TOP_MOVERS_MAX_WORKERS || secrets.TOP_MOVERS_MAX_WORKERS || '2' }}
           TOP_MOVERS_REPORT_TYPE: ${{ vars.TOP_MOVERS_REPORT_TYPE || secrets.TOP_MOVERS_REPORT_TYPE || 'simple' }}
           TOP_MOVERS_NOTIFY_ENABLED: ${{ vars.TOP_MOVERS_NOTIFY_ENABLED || secrets.TOP_MOVERS_NOTIFY_ENABLED || 'true' }}

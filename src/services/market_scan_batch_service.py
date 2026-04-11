@@ -309,7 +309,7 @@ def run_market_scan_batch(
             )
             return {"skipped": True, "reason": "cn_market_closed", "scan_kind": sk}
 
-    limit = limit_override if limit_override is not None else getattr(config, "top_movers_limit", 200)
+    limit = limit_override if limit_override is not None else getattr(config, "top_movers_limit", 1000)
     exclude_st = getattr(config, "top_movers_exclude_st", True)
 
     day_tag = (
@@ -517,7 +517,7 @@ def resume_market_scan_batch(
     config = config or get_config()
     label = "成交量榜" if sk == SCAN_KIND_VOLUME else "涨幅榜"
 
-    limit = limit_override if limit_override is not None else getattr(config, "top_movers_limit", 200)
+    limit = limit_override if limit_override is not None else getattr(config, "top_movers_limit", 1000)
     exclude_st = getattr(config, "top_movers_exclude_st", True)
 
     db = get_db()

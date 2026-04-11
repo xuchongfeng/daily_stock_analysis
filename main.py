@@ -381,7 +381,7 @@ def parse_arguments() -> argparse.Namespace:
         '--top-movers-limit',
         type=int,
         default=None,
-        help='覆盖 TOP_MOVERS_LIMIT（默认使用配置，最大 500；涨幅与成交量榜单共用）',
+        help='覆盖 TOP_MOVERS_LIMIT（默认使用配置，最大 1000；涨幅与成交量榜单共用）',
     )
 
     def _parse_market_scan_date(raw: str) -> date:

@@ -671,7 +671,7 @@ class TushareFetcher(BaseFetcher):
 
         Args:
             as_of: 交易日（自然日，须为交易所日历上的交易日才有数据）。
-            limit: 返回条数上限（与外层一致，最大 500）。
+            limit: 返回条数上限（与外层一致，最大 1000）。
             exclude_st: 是否排除名称以 ST / *ST 开头的标的（依赖 ``stock_basic`` 名称）。
 
         Returns:
@@ -681,7 +681,7 @@ class TushareFetcher(BaseFetcher):
             return []
 
         ts = as_of.strftime("%Y%m%d")
-        lim = max(1, min(int(limit or 200), 500))
+        lim = max(1, min(int(limit or 1000), 1000))
         try:
             df = self._fetch_daily_market_snapshot_by_trade_date(
                 ts, "ts_code,trade_date,pct_chg,amount"
@@ -773,7 +773,7 @@ class TushareFetcher(BaseFetcher):
             return []
 
         ts = as_of.strftime("%Y%m%d")
-        lim = max(1, min(int(limit or 200), 500))
+        lim = max(1, min(int(limit or 1000), 1000))
         try:
             df = self._fetch_daily_market_snapshot_by_trade_date(
                 ts, "ts_code,trade_date,vol,pct_chg,amount"

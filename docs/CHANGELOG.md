@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] `TOP_MOVERS_LIMIT` 默认值与可配置上限由 200/500 调整为 **1000**（`Config`、`config_registry`、Tushare/FetcherManager 取池上限、GitHub Actions 默认注入、`docs/market-scanner.md` 与 CLI 说明同步）。
+- [chore] Web 已移除「雪球」外观主题；`index.html` 首屏脚本会清除残留的 `xueqiu` class，并将本地仍保存的 `theme=xueqiu` 迁移为 `light`。
 - [改进] Web 桌面侧边栏收窄为 128px，导航项使用 `items-stretch` + 占位指示条与图标列同一 flex 行对齐，并 `px-2`/`gap-1.5` 收紧内边距；保留 `min-w-0`/`flex-1` 截断避免长标签溢出。
 - [改进] 信号摘要：SQLite 表 `signal_digest_cache` 缓存（`SIGNAL_DIGEST_CACHE_TTL_SECONDS` 默认 43200 秒即12 小时，可由环境变量覆盖，0 关闭）；查询参数 `use_cache`、`refresh`；响应字段 `from_cache`、`cache_expires_at`；Web「刷新」强制 `refresh=true`。
 - [改进] 信号摘要：支持 `batch_only`（仅榜单扫描批次）与 `advice_filter=buy_or_hold`（仅买入/加仓/持有/增持等偏多或持有类建议）；`exclude_batch` 默认改为 false；Web 默认「仅榜单扫描 + 买入或持有类」；窗口元数据增加 `rows_after_advice_filter`。

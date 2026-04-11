@@ -1131,7 +1131,7 @@ class DataFetcherManager:
 
     def get_cn_top_movers_universe(
         self,
-        limit: int = 200,
+        limit: int = 1000,
         exclude_st: bool = True,
         trade_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
@@ -1153,7 +1153,7 @@ class DataFetcherManager:
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
 
-        limit = max(1, min(int(limit or 200), 500))
+        limit = max(1, min(int(limit or 1000), 1000))
         as_of = trade_date if trade_date is not None else get_effective_trading_date("cn")
 
         for fetcher in self._get_fetchers_snapshot():
@@ -1225,7 +1225,7 @@ class DataFetcherManager:
 
     def get_cn_top_volume_universe(
         self,
-        limit: int = 200,
+        limit: int = 1000,
         exclude_st: bool = True,
         trade_date: Optional[date] = None,
     ) -> List[Dict[str, Any]]:
@@ -1240,7 +1240,7 @@ class DataFetcherManager:
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
 
-        limit = max(1, min(int(limit or 200), 500))
+        limit = max(1, min(int(limit or 1000), 1000))
         as_of = trade_date if trade_date is not None else get_effective_trading_date("cn")
 
         for fetcher in self._get_fetchers_snapshot():

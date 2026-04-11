@@ -649,7 +649,7 @@ class Config:
 
     # === 榜单扫描（涨幅 / 成交量 Top N，共用 TOP_MOVERS_*）===
     top_movers_enabled: bool = False
-    top_movers_limit: int = 200
+    top_movers_limit: int = 1000
     top_movers_max_workers: int = 5
     top_movers_report_type: str = "simple"
     top_movers_notify_enabled: bool = True
@@ -1317,10 +1317,10 @@ class Config:
             top_movers_enabled=os.getenv('TOP_MOVERS_ENABLED', 'false').lower() == 'true',
             top_movers_limit=parse_env_int(
                 os.getenv('TOP_MOVERS_LIMIT'),
-                200,
+                1000,
                 field_name='TOP_MOVERS_LIMIT',
                 minimum=1,
-                maximum=500,
+                maximum=1000,
             ),
             top_movers_max_workers=parse_env_int(
                 os.getenv('TOP_MOVERS_MAX_WORKERS'),
