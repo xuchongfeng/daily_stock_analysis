@@ -126,6 +126,66 @@ def apply_placeholder_fill(result: "AnalysisResult", missing_fields: List[str]) 
             result.dashboard["battle_plan"]["sniper_points"]["stop_loss"] = placeholder
 
 
+def extract_earnings_forecast_snippets(
+    fundamental_context: Optional[Dict[str, Any]],
+) -> Tuple[Optional[str], Optional[str]]:
+    """Read AkShare 业绩预告 / 业绩快报摘要 from ``fundamental_context`` (earnings.data)."""
+
+    def _clean(val: Any) -> Optional[str]:
+        if val is None:
+            return None
+        if not isinstance(val, str):
+            return None
+        t = val.strip()
+        return t if t else None
+
+    if not isinstance(fundamental_context, dict):
+        return None, None
+    earnings = fundamental_context.get("earnings")
+    if not isinstance(earnings, dict):
+        return None, None
+    data = earnings.get("data")
+    if not isinstance(data, dict):
+        return None, None
+    return _clean(data.get("forecast_summary")), _clean(data.get("quick_report_summary"))
+
+
+def backfill_dashboard_earnings_outlook_from_fundamentals(
+    dashboard: Optional[Dict[str, Any]],
+    fundamental_context: Optional[Dict[str, Any]],
+    *,
+    report_language: str = "zh",
+) -> None:
+    """If ``dashboard.intelligence.earnings_outlook`` is empty, fill from structured fundamentals."""
+    forecast_s, quick_s = extract_earnings_forecast_snippets(fundamental_context)
+    if not forecast_s and not quick_s:
+        return
+    if not isinstance(dashboard, dict):
+        return
+    intel = dashboard.get("intelligence")
+    intel = dict(intel) if isinstance(intel, dict) else {}
+    existing = intel.get("earnings_outlook")
+    if isinstance(existing, str) and existing.strip():
+        return
+    lang = normalize_report_language(report_language)
+    if lang == "en":
+        parts: List[str] = []
+        if forecast_s:
+            parts.append(f"Earnings forecast (data source): {forecast_s}")
+        if quick_s:
+            parts.append(f"Earnings quick report (data source): {quick_s}")
+        merged = " ".join(parts)
+    else:
+        parts_zh: List[str] = []
+        if forecast_s:
+            parts_zh.append(f"业绩预告摘要：{forecast_s}")
+        if quick_s:
+            parts_zh.append(f"业绩快报摘要：{quick_s}")
+        merged = "；".join(parts_zh)
+    intel["earnings_outlook"] = merged
+    dashboard["intelligence"] = intel
+
+
 # ---------- chip_structure fallback (Issue #589) ----------
 
 _CHIP_KEYS: tuple = ("profit_ratio", "avg_cost", "concentration", "chip_health")
@@ -1400,6 +1460,14 @@ class GeminiAnalyzer:
                 result.model_used = model_used
                 result.report_language = report_language
 
+                if not isinstance(result.dashboard, dict):
+                    result.dashboard = {}
+                backfill_dashboard_earnings_outlook_from_fundamentals(
+                    result.dashboard,
+                    context.get("fundamental_context") if isinstance(context, dict) else None,
+                    report_language=report_language,
+                )
+
                 # 内容完整性校验（可选）
                 if not config.report_integrity_enabled:
                     break
@@ -1580,6 +1648,29 @@ class GeminiAnalyzer:
 
 > 若上述字段为 N/A 或缺失，请明确写“数据缺失，无法判断”，禁止编造。
 """
+
+        forecast_s, quick_s = extract_earnings_forecast_snippets(fundamental_context)
+        if forecast_s or quick_s:
+            if report_language == "en":
+                prompt += "\n### Earnings forecast & quick report (structured)\n"
+                if forecast_s:
+                    prompt += f"- **Forecast**: {forecast_s}\n"
+                if quick_s:
+                    prompt += f"- **Quick report**: {quick_s}\n"
+                prompt += (
+                    "\nSummarize the above into `dashboard.intelligence.earnings_outlook` in the JSON output "
+                    "(one or two concise sentences). Do not invent figures beyond this block.\n"
+                )
+            else:
+                prompt += "\n### 业绩预告与业绩快报（结构化数据源）\n"
+                if forecast_s:
+                    prompt += f"- **业绩预告**：{forecast_s}\n"
+                if quick_s:
+                    prompt += f"- **业绩快报**：{quick_s}\n"
+                prompt += (
+                    "\n请将上述要点**浓缩写入** JSON 的 `dashboard.intelligence.earnings_outlook`（一至三句）；"
+                    "勿编造本节未出现的数字。若仅有其一则只写该项；若模型已结合新闻写出更完整预期，可与本节事实合并表述。\n"
+                )
 
         # 添加筹码分布数据
         if 'chip' in context:

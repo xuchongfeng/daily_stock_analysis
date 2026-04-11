@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [修复] 股票分析报告「业绩预期」：`GeminiAnalyzer` 在 Prompt 中注入基本面 `earnings.data` 的业绩预告/快报摘要，并在解析后对空的 `dashboard.intelligence.earnings_outlook` 用同源数据兜底回填；多 Agent 路径在 `AgentOrchestrator._normalize_dashboard_payload` 中同步回填（`ctx` 含 `fundamental_context` 时生效）。
 - [改进] `TOP_MOVERS_LIMIT` 默认值与可配置上限由 200/500 调整为 **1000**（`Config`、`config_registry`、Tushare/FetcherManager 取池上限、GitHub Actions 默认注入、`docs/market-scanner.md` 与 CLI 说明同步）。
 - [chore] Web 已移除「雪球」外观主题；`index.html` 首屏脚本会清除残留的 `xueqiu` class，并将本地仍保存的 `theme=xueqiu` 迁移为 `light`。
 - [改进] Web 桌面侧边栏收窄为 128px，导航项使用 `items-stretch` + 占位指示条与图标列同一 flex 行对齐，并 `px-2`/`gap-1.5` 收紧内边距；保留 `min-w-0`/`flex-1` 截断避免长标签溢出。

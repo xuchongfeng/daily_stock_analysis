@@ -42,6 +42,7 @@ from src.agent.protocols import (
 )
 from src.agent.runner import parse_dashboard_json
 from src.agent.tools.registry import ToolRegistry
+from src.analyzer import backfill_dashboard_earnings_outlook_from_fundamentals
 from src.report_language import normalize_report_language
 
 if TYPE_CHECKING:
@@ -941,6 +942,14 @@ class AgentOrchestrator:
             intelligence["positive_catalysts"] = positive_catalysts
         if latest_news and not intelligence.get("latest_news"):
             intelligence["latest_news"] = latest_news
+
+        _fund = ctx.get_data("fundamental_context")
+        _rl = normalize_report_language(str((ctx.meta or {}).get("report_language") or "zh"))
+        backfill_dashboard_earnings_outlook_from_fundamentals(
+            dashboard_block,
+            _fund if isinstance(_fund, dict) else None,
+            report_language=_rl,
+        )
 
         if not core.get("one_sentence"):
             core["one_sentence"] = _truncate_text(analysis_summary, 60)
