@@ -45,6 +45,7 @@
 | 补全 | 智能补全 (MVP) | **[测试阶段]** 首页搜索框支持代码/名称/拼音/别名联想；索引已覆盖 A股、港股、美股三个市场，支持通过 Tushare 或 AkShare 数据源更新 |
 | 智能导入 | 多源导入 | 支持图片、CSV/Excel 文件、剪贴板粘贴；Vision LLM 提取代码+名称；置信度分层确认；名称→代码解析（本地+拼音+AkShare） |
 | 历史记录 | 批量管理 | 支持多选、全选及批量删除历史分析记录，优化管理效率与 UI/UX 体验 |
+| 我的自选 | 列表 + CLI | Web `/watchlist` 管理自选；`GET/PUT /api/v1/watchlist` 与 `python main.py --my-watchlist` 共用 JSON（默认 `data/watchlist.json`，`WATCHLIST_FILE` 可覆盖）；信号摘要/报告/历史/榜单/持仓/回测等页可一键加入 |
 | 回测 | AI 回测验证 | 自动评估历史分析准确率，支持按股票与分析日期查看“AI 预测 vs 次日实际（1 日窗口）”和准确率 |
 | 榜单扫描 | 涨幅 / 成交量 Top N | 涨幅与成交量两路批量分析共用 `TOP_MOVERS_*`；`python main.py --market-scan gainers|volume`；Web `/market-scanner` 与 `GET /api/v1/market-scanner/*`（`/top-movers` 为兼容路径）；详见 [docs/market-scanner.md](docs/market-scanner.md) |
 | 资讯 | 公司公告 + 资金流 | IntelAgent 新增公告抓取与主力资金流维度（上交所/深交所/cninfo + A 股主力资金流）用于补强舆情链路 |
@@ -377,6 +378,13 @@ LITELLM_MODEL=openai/deepseek-chat
 - 图片：JPG/PNG/WebP/GIF，≤5MB；文件：≤2MB；粘贴文本：≤100KB
 
 **API**：`POST /api/v1/stocks/extract-from-image`（图片）、`POST /api/v1/stocks/parse-import`（文件/粘贴）。详见 [完整指南](docs/full-guide.md)。
+
+### 我的自选
+
+- **管理页**：`/watchlist` 查看与移除；侧栏「我的自选」进入。
+- **持久化**：默认写入项目下 `data/watchlist.json`（目录已在 `.gitignore` 中忽略）；环境变量 `WATCHLIST_FILE` 可改为绝对路径或相对当前工作目录的路径。
+- **API**：`GET /api/v1/watchlist`、`PUT /api/v1/watchlist`（与 CLI 读同一文件）。
+- **命令行**：`python main.py --my-watchlist` 仅对自选列表执行完整个股分析（更新评分等），与 `--stocks` 互斥；不可与定时、回测、仅大盘复盘、榜单扫描同时使用。
 
 ### 智能搜索补全 (MVP)
 

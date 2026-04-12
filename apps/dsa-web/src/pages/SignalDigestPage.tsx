@@ -16,6 +16,7 @@ import {
 } from '../components/common';
 import type { SignalDigestResponse } from '../types/signalDigest';
 import { xueqiuStockHref } from '../utils/xueqiu';
+import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 
 const CONTROL_CLASS =
   'h-10 rounded-xl border border-border/60 bg-background px-3 text-sm text-foreground outline-none transition-colors focus-visible:border-[hsl(var(--primary))] focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))]/25';
@@ -239,6 +240,7 @@ const SignalDigestPage: React.FC = () => {
                     <th className="px-4 py-2 font-medium">评分</th>
                     <th className="px-4 py-2 font-medium">建议</th>
                     <th className="px-4 py-2 font-medium">趋势</th>
+                    <th className="px-2 py-2 font-medium text-center">自选</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -253,6 +255,9 @@ const SignalDigestPage: React.FC = () => {
                       </td>
                       <td className="px-4 py-2 text-secondary-text">{p.operationAdvice ?? '—'}</td>
                       <td className="px-4 py-2 text-secondary-text">{p.trendPrediction ?? '—'}</td>
+                      <td className="px-2 py-2 text-center align-middle">
+                        <AddToWatchlistButton stockCode={p.code} stockName={p.name} compact />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

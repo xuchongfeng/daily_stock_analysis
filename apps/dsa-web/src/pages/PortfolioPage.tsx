@@ -7,6 +7,7 @@ import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
 import { pollAnalysisTask } from '../utils/analysisTaskPoll';
 import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert } from '../components/common';
+import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 import { toDateInputValue } from '../utils/format';
 import type {
   PortfolioAccountItem,
@@ -1178,6 +1179,7 @@ const PortfolioPage: React.FC = () => {
                     <th className="text-right py-2 pr-2">现价</th>
                     <th className="text-right py-2 pr-2">市值</th>
                     <th className="text-right py-2">未实现盈亏</th>
+                    <th className="text-center py-2 w-12">自选</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1191,6 +1193,9 @@ const PortfolioPage: React.FC = () => {
                       <td className="py-2 pr-2 text-right">{formatMoney(row.marketValueBase, row.valuationCurrency)}</td>
                       <td className={`py-2 text-right ${row.unrealizedPnlBase >= 0 ? 'text-success' : 'text-danger'}`}>
                         {formatMoney(row.unrealizedPnlBase, row.valuationCurrency)}
+                      </td>
+                      <td className="py-2 text-center align-middle">
+                        <AddToWatchlistButton stockCode={row.symbol} compact />
                       </td>
                     </tr>
                   ))}
@@ -1270,6 +1275,7 @@ const PortfolioPage: React.FC = () => {
                   <th className="text-left py-2 pr-2">操作建议</th>
                   <th className="text-left py-2 pr-2">摘要</th>
                   <th className="text-left py-2">状态</th>
+                  <th className="text-center py-2 w-12">自选</th>
                 </tr>
               </thead>
               <tbody>
@@ -1294,6 +1300,9 @@ const PortfolioPage: React.FC = () => {
                     </td>
                     <td className="py-2 text-xs text-secondary whitespace-nowrap">
                       {portfolioCheckupStatusLabel(row, checkupLoading)}
+                    </td>
+                    <td className="py-2 text-center align-middle">
+                      <AddToWatchlistButton stockCode={row.symbol} stockName={row.stockName} compact />
                     </td>
                   </tr>
                 ))}

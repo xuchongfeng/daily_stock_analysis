@@ -5,6 +5,7 @@ import { backtestApi } from '../api/backtest';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
 import { ApiErrorAlert, Card, Badge, EmptyState, Pagination, StatusDot, Tooltip } from '../components/common';
+import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 import type {
   BacktestResultItem,
   BacktestRunResponse,
@@ -521,8 +522,11 @@ const BacktestPage: React.FC = () => {
                         className="backtest-table-row"
                       >
                         <td className="backtest-table-cell backtest-table-code">
-                          <div className="flex flex-col">
-                            <span>{row.code}</span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span>{row.code}</span>
+                              <AddToWatchlistButton stockCode={row.code} stockName={row.stockName} compact />
+                            </div>
                             <span className="text-xs text-muted-text">{row.stockName || '--'}</span>
                           </div>
                         </td>

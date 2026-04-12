@@ -23,6 +23,7 @@ from api.v1.endpoints import (
     portfolio,
     market_scan,
     signal_digest,
+    watchlist,
 )
 
 # 创建 v1 版本主路由
@@ -97,4 +98,10 @@ router.include_router(
     signal_digest.router,
     prefix="/insights/signal-digest",
     tags=["Insights"],
+)
+
+router.include_router(
+    watchlist.router,
+    prefix="/watchlist",
+    tags=["Watchlist"],
 )

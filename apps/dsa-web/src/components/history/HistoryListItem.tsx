@@ -1,5 +1,6 @@
 import type React from 'react';
 import { Badge } from '../common';
+import { AddToWatchlistButton } from '../watchlist/AddToWatchlistButton';
 import type { HistoryItem } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
 import { formatDateTime } from '../../utils/format';
@@ -105,6 +106,7 @@ export const HistoryListItem: React.FC<HistoryListItemProps> = ({
               <span className="text-[11px] text-secondary-text font-mono">
                 {item.stockCode}
               </span>
+              <AddToWatchlistButton stockCode={item.stockCode} stockName={item.stockName} compact />
               <span className="w-1 h-1 rounded-full bg-subtle-hover" />
               <span className="text-[11px] text-muted-text">
                 {formatDateTime(item.createdAt)}

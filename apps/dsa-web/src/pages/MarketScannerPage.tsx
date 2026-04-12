@@ -16,6 +16,7 @@ import {
 import { ReportMarkdown } from '../components/report/ReportMarkdown';
 import type { MarketScanBatchSummary, MarketScanItem, MarketScanKindFilter } from '../types/marketScan';
 import { xueqiuStockHref } from '../utils/xueqiu';
+import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 
 const DATE_INPUT_CLASS =
   'h-10 w-full max-w-[11rem] rounded-xl border border-border/60 bg-background px-3 text-sm text-foreground tabular-nums outline-none transition-colors focus-visible:border-[hsl(var(--primary))] focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))]/25';
@@ -447,6 +448,7 @@ const MarketScannerPage: React.FC = () => {
                       <th className="px-3 py-2">涨跌%</th>
                       <th className="px-3 py-2">评分</th>
                       <th className="px-3 py-2">建议</th>
+                      <th className="w-12 px-2 py-2 text-center">自选</th>
                       <th className="px-3 py-2" />
                     </tr>
                   </thead>
@@ -475,6 +477,9 @@ const MarketScannerPage: React.FC = () => {
                         </td>
                         <td className="px-3 py-2">{row.sentimentScore ?? '—'}</td>
                         <td className="px-3 py-2 text-xs">{row.operationAdvice ?? '—'}</td>
+                        <td className="px-2 py-2 text-center align-middle">
+                          <AddToWatchlistButton stockCode={row.stockCode} stockName={row.stockName} compact />
+                        </td>
                         <td className="px-3 py-2 text-right">
                           {row.id != null ? (
                             <Button type="button" variant="ghost" size="sm" onClick={() => setPreview(row)}>

@@ -214,6 +214,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --debug            # 调试模式
   python main.py --dry-run          # 仅获取数据，不进行 AI 分析
   python main.py --stocks 600519,000001  # 指定分析特定股票
+  python main.py --my-watchlist         # 仅分析 Web「我的自选」持久化列表（见 WATCHLIST_FILE）
   python main.py --no-notify        # 不发送推送通知
   python main.py --single-notify    # 启用单股推送模式（每分析完一只立即推送）
   python main.py --schedule         # 启用定时任务模式
@@ -237,10 +238,16 @@ def parse_arguments() -> argparse.Namespace:
         help='仅获取数据，不进行 AI 分析'
     )
 
-    parser.add_argument(
+    stock_pick = parser.add_mutually_exclusive_group()
+    stock_pick.add_argument(
         '--stocks',
         type=str,
-        help='指定要分析的股票代码，逗号分隔（覆盖配置文件）'
+        help='指定要分析的股票代码，逗号分隔（覆盖配置文件；与 --my-watchlist 互斥）',
+    )
+    stock_pick.add_argument(
+        '--my-watchlist',
+        action='store_true',
+        help='仅分析自选列表（默认 data/watchlist.json，可用 WATCHLIST_FILE 覆盖；与 Web「我的自选」及 GET/PUT /api/v1/watchlist 共用）',
     )
 
     parser.add_argument(
@@ -757,6 +764,12 @@ def main() -> int:
     # 解析命令行参数
     args = parse_arguments()
 
+    # 尽早映射 WebUI 别名，避免后续 --my-watchlist 空列表校验误伤「仅启动服务」场景
+    if args.webui:
+        args.serve = True
+    if args.webui_only:
+        args.serve_only = True
+
     # 在配置加载前先初始化 bootstrap 日志，确保早期失败也能落盘
     try:
         _setup_bootstrap_logging(debug=args.debug)
@@ -798,12 +811,37 @@ def main() -> int:
     if args.stocks:
         stock_codes = [canonical_stock_code(c) for c in args.stocks.split(',') if (c or "").strip()]
         logger.info(f"使用命令行指定的股票列表: {stock_codes}")
+    elif getattr(args, "my_watchlist", False):
+        from src.services.watchlist_store import load_watchlist_codes
 
-    # === 处理 --webui / --webui-only 参数，映射到 --serve / --serve-only ===
-    if args.webui:
-        args.serve = True
-    if args.webui_only:
-        args.serve_only = True
+        loaded = load_watchlist_codes()
+        if not loaded:
+            if args.serve_only:
+                logger.info("自选列表为空；当前为仅 Web 服务模式，将继续启动 API 以便在网页中添加自选。")
+                stock_codes = None
+            else:
+                logger.error(
+                    "自选列表为空：请在 Web「我的自选」添加股票，或编辑 WATCHLIST_FILE 指向的 JSON（默认项目下 data/watchlist.json）。"
+                )
+                return 1
+        else:
+            stock_codes = loaded
+            logger.info("使用自选列表（共 %d 只）: %s", len(stock_codes), stock_codes)
+
+    if getattr(args, "my_watchlist", False):
+        if args.schedule or config.schedule_enabled:
+            logger.error("定时任务模式请使用 STOCK_LIST；--my-watchlist 仅用于单次运行。")
+            return 1
+        if getattr(args, "backtest", False):
+            logger.error("--my-watchlist 与 --backtest 不能同时使用。")
+            return 1
+        if getattr(args, "market_review", False):
+            logger.error("--my-watchlist 与 --market-review 不能同时使用。")
+            return 1
+        scan_mode = getattr(args, "market_scan", None)
+        if scan_mode or getattr(args, "top_movers", False):
+            logger.error("--my-watchlist 与榜单扫描参数不能同时使用。")
+            return 1
 
     # 兼容旧版 WEBUI_ENABLED 环境变量
     if config.webui_enabled and not (args.serve or args.serve_only):

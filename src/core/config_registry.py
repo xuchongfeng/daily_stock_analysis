@@ -84,6 +84,23 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "validation": {"min_items": 1},
         "display_order": 10,
     },
+    "WATCHLIST_FILE": {
+        "title": "My Watchlist File",
+        "description": (
+            "Path to persisted JSON for Web「我的自选」and CLI --my-watchlist "
+            "(default: <project>/data/watchlist.json when unset)."
+        ),
+        "category": "base",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 11,
+    },
     # ------------------------------------------------------------------
     # AI Model – LiteLLM unified config
     # ------------------------------------------------------------------
