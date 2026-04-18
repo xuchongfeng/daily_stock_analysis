@@ -1803,6 +1803,157 @@ class DatabaseManager:
             results = session.execute(data_query).scalars().all()
             return list(results), int(total)
 
+    def get_volume_scan_daily_ge_score_stock_counts(
+        self,
+        min_score: int = 70,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        按成交量榜扫描交易日统计：当日各股取最大 AI 评分后，评分 >= ``min_score`` 的去重股票数。
+
+        同一自然日存在多个 ``tv_YYYYMMDD_*`` 批次时，按 (交易日, 股票代码) 合并取 ``MAX(sentiment_score)`` 再计数，
+        避免同日重跑导致重复计数。
+
+        Args:
+            min_score: 评分下限（含），默认 70。
+            start_date: 可选，按批次号内交易日（YYYYMMDD）过滤下界。
+            end_date: 可选，按批次号内交易日过滤上界。
+
+        Returns:
+            [{ "trade_date": "YYYY-MM-DD", "stock_count": int, "min_score": int }, ...] 按交易日升序。
+        """
+        from src.services.market_scan_constants import BATCH_KIND_VOLUME as _BK_V
+
+        min_score = int(min_score)
+        tv_prefix = AnalysisHistory.batch_run_id.like("tv_%")
+        volume_cond = or_(
+            AnalysisHistory.batch_kind == _BK_V,
+            and_(AnalysisHistory.batch_kind.is_(None), tv_prefix),
+        )
+        ymd_expr = func.substr(AnalysisHistory.batch_run_id, 4, 8)
+        strict_tv = AnalysisHistory.batch_run_id.op("GLOB")(
+            "tv_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*"
+        )
+        inner_where: List[Any] = [
+            volume_cond,
+            strict_tv,
+            AnalysisHistory.sentiment_score.isnot(None),
+        ]
+        if start_date is not None:
+            inner_where.append(ymd_expr >= start_date.strftime("%Y%m%d"))
+        if end_date is not None:
+            inner_where.append(ymd_expr <= end_date.strftime("%Y%m%d"))
+
+        inner = (
+            select(
+                ymd_expr.label("trade_ymd"),
+                AnalysisHistory.code,
+                func.max(AnalysisHistory.sentiment_score).label("mx"),
+            )
+            .where(and_(*inner_where))
+            .group_by(ymd_expr, AnalysisHistory.code)
+            .subquery()
+        )
+        outer = (
+            select(inner.c.trade_ymd, func.count().label("cnt"))
+            .where(inner.c.mx >= min_score)
+            .group_by(inner.c.trade_ymd)
+            .order_by(inner.c.trade_ymd)
+        )
+        out: List[Dict[str, Any]] = []
+        with self.get_session() as session:
+            for ymd_s, cnt in session.execute(outer).all():
+                if not ymd_s or len(str(ymd_s)) != 8:
+                    continue
+                ds = str(ymd_s)
+                try:
+                    td = date(int(ds[0:4]), int(ds[4:6]), int(ds[6:8]))
+                except ValueError:
+                    continue
+                out.append(
+                    {
+                        "trade_date": td.isoformat(),
+                        "stock_count": int(cnt or 0),
+                        "min_score": min_score,
+                    }
+                )
+        return out
+
+    def get_volume_scan_stock_rating_series(
+        self,
+        code: str,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        某只股票在成交量榜扫描中的按交易日评分序列（``sentiment_score``）。
+
+        同一交易日多条记录时取 ``created_at`` 最新的一条。
+
+        Returns:
+            [{ "id", "trade_date", "sentiment_score", "batch_run_id", "rank_in_batch", "stock_name", "created_at" }, ...]
+        """
+        from src.services.market_scan_constants import (
+            BATCH_KIND_VOLUME as _BK_V,
+            SCAN_KIND_VOLUME,
+            parse_market_scan_batch_run_id,
+        )
+
+        code = (code or "").strip()
+        if not code:
+            return []
+
+        tv_prefix = AnalysisHistory.batch_run_id.like("tv_%")
+        volume_cond = or_(
+            AnalysisHistory.batch_kind == _BK_V,
+            and_(AnalysisHistory.batch_kind.is_(None), tv_prefix),
+        )
+        strict_tv = AnalysisHistory.batch_run_id.op("GLOB")(
+            "tv_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_*"
+        )
+        conds: List[Any] = [
+            AnalysisHistory.code == code,
+            volume_cond,
+            strict_tv,
+            AnalysisHistory.sentiment_score.isnot(None),
+        ]
+        with self.get_session() as session:
+            rows = session.execute(
+                select(AnalysisHistory)
+                .where(and_(*conds))
+                .order_by(AnalysisHistory.created_at.asc(), AnalysisHistory.id.asc())
+            ).scalars().all()
+
+        best: Dict[date, AnalysisHistory] = {}
+        for r in rows:
+            parsed = parse_market_scan_batch_run_id(r.batch_run_id or "")
+            if parsed is None or parsed[0] != SCAN_KIND_VOLUME:
+                continue
+            td = parsed[1]
+            if start_date is not None and td < start_date:
+                continue
+            if end_date is not None and td > end_date:
+                continue
+            # 同一自然日多条时保留时间顺序上最后一条（created_at 相同则 id 更大者优先）
+            best[td] = r
+
+        out: List[Dict[str, Any]] = []
+        for td in sorted(best.keys()):
+            r = best[td]
+            out.append(
+                {
+                    "id": r.id,
+                    "trade_date": td.isoformat(),
+                    "sentiment_score": int(r.sentiment_score) if r.sentiment_score is not None else None,
+                    "batch_run_id": r.batch_run_id or "",
+                    "rank_in_batch": r.rank_in_batch,
+                    "stock_name": r.name,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+            )
+        return out
+
     def get_analysis_history_by_id(self, record_id: int) -> Optional[AnalysisHistory]:
         """
         根据数据库主键 ID 查询单条分析历史记录

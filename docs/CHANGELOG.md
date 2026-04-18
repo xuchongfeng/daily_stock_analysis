@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 同花顺概念爬虫结果可选写入应用 SQLite：`crawler_ths_concept_run`、`crawler_ths_concept`、`crawler_ths_concept_constituent`（默认开启 `CRAWLER_THS_PERSIST_DB`；写入失败仅打日志，不中断 jsonl 产出）；见 `docs/crawler.md`。
 - [新功能] 独立爬虫模块 `src/crawler`：同花顺概念目录 HTML + 成分 AJAX 分页（`field/order/page/ajax/code`），`python main.py --crawl ths-concept`（支持 `--dry-run`、`--crawl-output-dir`、上限覆盖）；需 `CRAWLER_THS_HEXIN_V` 或 `CRAWLER_THS_COOKIE`；产出 `data/crawler/ths_concept/<run_id>/{concepts,constituents}.jsonl`；文档 `docs/crawler.md`；依赖显式 `lxml`。
 - [改进] Web「我的自选」：名称列可跳转雪球个股页（与榜单扫描一致，沪深/北交所）；尚无名称回填时，操作列显示「雪球」外链。
+- [新功能] Web「榜单扫描」增加「评分历史」子页：`GET /api/v1/market-scanner/stats/volume-rating-threshold-daily`（成交量榜按日统计评分不低于阈值的去重股票数）、`GET /api/v1/market-scanner/stocks/{code}/volume-rating-series`（单股按交易日成交量榜 AI 评分曲线）；文档见 `docs/market-scanner.md`。
+- [改进] 「评分历史」个股评分曲线：接口返回每条 `id`（分析历史主键）；「查看报告」改为点击折线圆点选中后在图下固定操作条打开（避免 Tooltip 随鼠标移动无法点中按钮）。
+- [改进] 「评分历史」日期筛选增加快捷项：最近 1 周 / 2 周 / 1 个月 / 3 个月及「全部日期」（高分股数量与个股曲线两处独立）。
 - [改进] Web「我的自选」表格展示每只股票在分析历史中最新一条的 **AI 评分** 与 **买卖建议**（摘要标签 + 悬浮查看完整操作建议）；名称列在无自选备注时回填历史中的股票名称。
 - [新功能] 「我的自选」：持久化 JSON（默认 `data/watchlist.json`，`WATCHLIST_FILE` 可覆盖）、`GET/PUT /api/v1/watchlist`、Web `/watchlist` 管理页与多处「加入自选」入口；CLI `python main.py --my-watchlist` 仅对自选列表跑完整分析以更新评分（与 `--stocks` 互斥；不与定时/回测/大盘-only/榜单扫描同用）。
 - [修复] 股票分析报告「业绩预期」：`GeminiAnalyzer` 在 Prompt 中注入基本面 `earnings.data` 的业绩预告/快报摘要，并在解析后对空的 `dashboard.intelligence.earnings_outlook` 用同源数据兜底回填；多 Agent 路径在 `AgentOrchestrator._normalize_dashboard_payload` 中同步回填（`ctx` 含 `fundamental_context` 时生效）。

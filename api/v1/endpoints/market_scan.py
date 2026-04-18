@@ -16,7 +16,12 @@ from api.v1.schemas.market_scan import (
     MarketScanNotifyRequest,
     MarketScanNotifyResponse,
     MarketScanResumeResponse,
+    VolumeScanDailyGeScorePoint,
+    VolumeScanDailyGeScoreSeriesResponse,
+    VolumeScanStockRatingPoint,
+    VolumeScanStockRatingSeriesResponse,
 )
+from data_provider.base import canonical_stock_code
 from src.services.market_scan_batch_service import (
     resume_market_scan_batch,
     send_market_scan_batch_notification,
@@ -34,6 +39,94 @@ def _normalize_scan_kind_filter(raw: Optional[str]) -> str:
     if s in {"gainers", "volume", "all"}:
         return s
     return "all"
+
+
+@router.get(
+    "/stats/volume-rating-threshold-daily",
+    response_model=VolumeScanDailyGeScoreSeriesResponse,
+    summary="成交量榜：每日高分股票数量曲线",
+)
+def volume_scan_daily_ge_score_counts(
+    min_score: int = Query(
+        70,
+        ge=0,
+        le=100,
+        description="评分下限（含）；统计各交易日评分不低于该值的去重股票数",
+    ),
+    start_date: Optional[date] = Query(
+        None,
+        description="可选：交易日下界（与批次号 tv_YYYYMMDD_* 对齐）",
+    ),
+    end_date: Optional[date] = Query(
+        None,
+        description="可选：交易日上界",
+    ),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> VolumeScanDailyGeScoreSeriesResponse:
+    try:
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+        rows = db_manager.get_volume_scan_daily_ge_score_stock_counts(
+            min_score=min_score,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        return VolumeScanDailyGeScoreSeriesResponse(
+            points=[VolumeScanDailyGeScorePoint(**r) for r in rows]
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("volume_scan_daily_ge_score_counts failed: %s", exc)
+        raise HTTPException(status_code=500, detail="查询成交量榜评分统计失败") from exc
+
+
+@router.get(
+    "/stocks/{stock_code}/volume-rating-series",
+    response_model=VolumeScanStockRatingSeriesResponse,
+    summary="成交量榜：单只股票按交易日的 AI 评分曲线",
+)
+def volume_scan_stock_rating_series(
+    stock_code: str,
+    start_date: Optional[date] = Query(
+        None,
+        description="可选：交易日下界",
+    ),
+    end_date: Optional[date] = Query(
+        None,
+        description="可选：交易日上界",
+    ),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> VolumeScanStockRatingSeriesResponse:
+    code = canonical_stock_code(stock_code)
+    if not code:
+        raise HTTPException(status_code=400, detail="股票代码不能为空")
+    try:
+        if start_date is not None and end_date is not None and start_date > end_date:
+            raise HTTPException(status_code=400, detail="start_date 不能晚于 end_date")
+        rows = db_manager.get_volume_scan_stock_rating_series(
+            code=code,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        pts = [
+            VolumeScanStockRatingPoint(
+                id=r.get("id"),
+                trade_date=r["trade_date"],
+                sentiment_score=int(r["sentiment_score"] or 0),
+                batch_run_id=r.get("batch_run_id") or "",
+                rank_in_batch=r.get("rank_in_batch"),
+                stock_name=r.get("stock_name"),
+                created_at=r.get("created_at"),
+            )
+            for r in rows
+        ]
+        return VolumeScanStockRatingSeriesResponse(stock_code=code, points=pts)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("volume_scan_stock_rating_series failed: %s", exc)
+        raise HTTPException(status_code=500, detail="查询个股成交量榜评分序列失败") from exc
 
 
 @router.get(
