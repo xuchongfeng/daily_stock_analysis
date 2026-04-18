@@ -10,6 +10,7 @@ import {
   MessageSquareQuote,
   Settings2,
   TrendingUp,
+  Layers,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -41,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'portfolio', label: '持仓', to: '/portfolio', icon: BriefcaseBusiness },
   { key: 'backtest', label: '回测', to: '/backtest', icon: BarChart3 },
   { key: 'market-scanner', label: '榜单扫描', to: '/market-scanner', icon: TrendingUp },
+  { key: 'ths-concept-crawl', label: '概念爬取', to: '/ths-concept-crawl', icon: Layers },
   { key: 'settings', label: '设置', to: '/settings', icon: Settings2 },
 ];
 

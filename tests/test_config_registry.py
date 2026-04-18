@@ -109,18 +109,19 @@ class TestFeishuWebhookFieldsRegistered(unittest.TestCase):
 
 
 class TestSensitiveFieldsUsePasswordControl(unittest.TestCase):
-    """Every is_sensitive field must use ui_control='password' to avoid
-    leaking secrets in the Web settings page."""
+    """Sensitive fields must use password or textarea (masked server-side) for Web UI."""
 
-    def test_all_sensitive_fields_use_password(self):
+    _ALLOWED_SENSITIVE_CONTROLS = frozenset({"password", "textarea"})
+
+    def test_all_sensitive_fields_use_safe_control(self):
         schema = build_schema_response()
         violations = []
         for cat in schema["categories"]:
             for field in cat["fields"]:
-                if field.get("is_sensitive") and field.get("ui_control") != "password":
+                if field.get("is_sensitive") and field.get("ui_control") not in self._ALLOWED_SENSITIVE_CONTROLS:
                     violations.append(field["key"])
         self.assertEqual(violations, [],
-                         f"Sensitive fields with non-password ui_control: {violations}")
+                         f"Sensitive fields with disallowed ui_control: {violations}")
 
 
 class TestDiscordInteractionPublicKeyField(unittest.TestCase):
@@ -139,6 +140,32 @@ class TestDiscordInteractionPublicKeyField(unittest.TestCase):
         self.assertIsNotNone(notification_cat, "notification category missing")
         field_keys = {f["key"] for f in notification_cat["fields"]}
         self.assertIn("DISCORD_INTERACTIONS_PUBLIC_KEY", field_keys)
+
+
+class TestCrawlerSettingsRegistered(unittest.TestCase):
+    """THS crawler keys must appear under the crawler category in schema."""
+
+    _CRAWLER_KEYS = (
+        "CRAWLER_THS_COOKIE",
+        "CRAWLER_THS_HEXIN_V",
+        "CRAWLER_THS_AUTO_BOOTSTRAP",
+        "CRAWLER_THS_BOOTSTRAP_URL",
+        "CRAWLER_USER_AGENT",
+    )
+
+    def test_crawler_fields_category(self):
+        for key in self._CRAWLER_KEYS:
+            field = get_field_definition(key)
+            self.assertEqual(field["category"], "crawler", key)
+            self.assertNotEqual(field["display_order"], 9000, key)
+
+    def test_schema_includes_crawler_category(self):
+        schema = build_schema_response()
+        crawler_cat = next((c for c in schema["categories"] if c["category"] == "crawler"), None)
+        self.assertIsNotNone(crawler_cat, "crawler category missing")
+        keys = {f["key"] for f in crawler_cat["fields"]}
+        for key in self._CRAWLER_KEYS:
+            self.assertIn(key, keys, key)
 
 
 if __name__ == "__main__":

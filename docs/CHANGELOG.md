@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] Web「概念爬取」页（`/ths-concept-crawl`）与同花顺概念爬虫 SQLite 只读 API（`/api/v1/crawler/ths-concept/runs` 及子资源），用于查看运行/概念/成分进度；`DatabaseManager` 增加列表查询方法。
+- [改进] 爬虫：未设置 `CRAWLER_DELAY_MS` 时默认 **2000 ms**（2 秒/次），降低同花顺 WAF 触发率。
+- [改进] 爬虫：`CRAWLER_HTTP_VERIFY_SSL` 等布尔环境值支持去掉一层首尾引号。
+- [新功能] 爬虫：`CRAWLER_HTTP_VERIFY_SSL`（默认 `true`）；`false` 时 httpx 不校验 HTTPS 证书，便于抓包或企业代理自签链。
+- [新功能] Web 系统设置新增「网页爬虫」分类：`CRAWLER_THS_COOKIE`（完整 Cookie）、`CRAWLER_THS_HEXIN_V` 及 THS/爬虫相关项；`config_registry` 新增 `crawler` 分类与 API Schema `Literal`。
+- [改进] 爬虫：移除逐请求 **INFO 打印完整 HTTP 请求头**（原 `CRAWLER_LOG_REQUEST_HEADERS`）；`ths-concept` 任务改为 **INFO** 输出结构化进度（板块总数、已完板块数、当前板块、成分页、本板块股票数估计、本板块/全局已爬条数）。
+- [改进] 爬虫默认 `CRAWLER_USER_AGENT` 改为 macOS 桌面 Chrome 146 串；`Sec-CH-UA-Platform` 随 UA 自动区分 macOS / Windows / Linux。
+- [修复] 同花顺概念成分 AJAX 易现 HTTP 401/403：成分请求改为与浏览器地址栏打开一致的 **文档导航** 头（`Sec-Fetch-Dest: document`、`Mode: navigate`、`Site: none`，无 `X-Requested-With`/`Origin`）；保留预检详情页与 `hexin-v`；401/403 均抛出 `CrawlAuthError` 提示。
+- [改进] 同花顺爬虫 Cookie 预取：默认 `GET https://www.10jqka.com.cn/`（浏览器式导航头、`Referer` 指向 `q.10jqka.com.cn`）；未配置 hexin/Cookie 时仍先请求 `CRAWLER_THS_BOOTSTRAP_URL` 取 `v`，可用 `CRAWLER_THS_AUTO_BOOTSTRAP=false` 关闭。
+- [新功能] 同花顺概念爬虫结果可选写入应用 SQLite：`crawler_ths_concept_run`、`crawler_ths_concept`、`crawler_ths_concept_constituent`（默认开启 `CRAWLER_THS_PERSIST_DB`；写入失败仅打日志，不中断 jsonl 产出）；见 `docs/crawler.md`。
+- [新功能] 独立爬虫模块 `src/crawler`：同花顺概念目录 HTML + 成分 AJAX 分页（`field/order/page/ajax/code`），`python main.py --crawl ths-concept`（支持 `--dry-run`、`--crawl-output-dir`、上限覆盖）；需 `CRAWLER_THS_HEXIN_V` 或 `CRAWLER_THS_COOKIE`；产出 `data/crawler/ths_concept/<run_id>/{concepts,constituents}.jsonl`；文档 `docs/crawler.md`；依赖显式 `lxml`。
+- [改进] Web「我的自选」：名称列可跳转雪球个股页（与榜单扫描一致，沪深/北交所）；尚无名称回填时，操作列显示「雪球」外链。
 - [改进] Web「我的自选」表格展示每只股票在分析历史中最新一条的 **AI 评分** 与 **买卖建议**（摘要标签 + 悬浮查看完整操作建议）；名称列在无自选备注时回填历史中的股票名称。
 - [新功能] 「我的自选」：持久化 JSON（默认 `data/watchlist.json`，`WATCHLIST_FILE` 可覆盖）、`GET/PUT /api/v1/watchlist`、Web `/watchlist` 管理页与多处「加入自选」入口；CLI `python main.py --my-watchlist` 仅对自选列表跑完整分析以更新评分（与 `--stocks` 互斥；不与定时/回测/大盘-only/榜单扫描同用）。
 - [修复] 股票分析报告「业绩预期」：`GeminiAnalyzer` 在 Prompt 中注入基本面 `earnings.data` 的业绩预告/快报摘要，并在解析后对空的 `dashboard.intelligence.earnings_outlook` 用同源数据兜底回填；多 Agent 路径在 `AgentOrchestrator._normalize_dashboard_payload` 中同步回填（`ctx` 含 `fundamental_context` 时生效）。

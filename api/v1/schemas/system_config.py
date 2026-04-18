@@ -28,6 +28,7 @@ class SystemConfigFieldSchema(BaseModel):
         "notification",
         "system",
         "agent",
+        "crawler",
         "market_scan",
         "backtest",
         "uncategorized",

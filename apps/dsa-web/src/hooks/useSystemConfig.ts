@@ -31,6 +31,8 @@ const CATEGORY_DISPLAY_ORDER: Record<string, number> = {
   notification: 40,
   system: 50,
   agent: 55,
+  crawler: 56,
+  market_scan: 58,
   backtest: 60,
   uncategorized: 99,
 };

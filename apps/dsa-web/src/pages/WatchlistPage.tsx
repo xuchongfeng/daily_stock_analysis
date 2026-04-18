@@ -18,6 +18,7 @@ import {
 import type { HistoryItem } from '../types/analysis';
 import { getSentimentColor } from '../types/analysis';
 import { useWatchlistStore } from '../stores/watchlistStore';
+import { xueqiuStockHref } from '../utils/xueqiu';
 
 const BATCH_SIZE = 50;
 /** 并发拉取历史摘要，避免自选数量较多时瞬间打满连接 */
@@ -33,6 +34,22 @@ function operationAdviceShortLabel(advice?: string | null): string {
   if (normalized.includes('观望') || normalized.includes('等待')) return '观望';
   if (normalized.includes('买') || normalized.includes('布局')) return '买入';
   return normalized.split(/[，。；、\s]/)[0] || '—';
+}
+
+const XUEQIU_LINK_CLASS =
+  'text-xs font-medium text-[hsl(var(--primary))] underline-offset-2 hover:underline';
+
+function watchlistNameCell(code: string, name: string) {
+  const href = xueqiuStockHref(code);
+  const label = name;
+  if (href && label !== '—') {
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer" className={XUEQIU_LINK_CLASS}>
+        {label}
+      </a>
+    );
+  }
+  return label;
 }
 
 const WatchlistPage: React.FC = () => {
@@ -204,11 +221,12 @@ const WatchlistPage: React.FC = () => {
                   const scoreColor =
                     score !== undefined && score !== null ? getSentimentColor(Number(score)) : null;
                   const nameCell = labels[c]?.trim() || latest?.stockName?.trim() || '—';
+                  const xueqiuHref = xueqiuStockHref(c);
                   return (
                     <tr key={c} className="border-t border-border/40">
                       <td className="py-2 pr-3 font-mono text-foreground">{c}</td>
                       <td className="max-w-[10rem] truncate py-2 pr-3 text-secondary-text" title={nameCell}>
-                        {nameCell}
+                        {watchlistNameCell(c, nameCell)}
                       </td>
                       <td className="py-2 pr-3 tabular-nums">
                         {score !== undefined && score !== null ? (
@@ -241,10 +259,17 @@ const WatchlistPage: React.FC = () => {
                       </td>
                       <td className="py-2 pr-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Link
-                            to="/analyze"
-                            className="text-xs font-medium text-[hsl(var(--primary))] underline-offset-2 hover:underline"
-                          >
+                          {xueqiuHref && nameCell === '—' ? (
+                            <a
+                              href={xueqiuHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={XUEQIU_LINK_CLASS}
+                            >
+                              雪球
+                            </a>
+                          ) : null}
+                          <Link to="/analyze" className={XUEQIU_LINK_CLASS}>
                             去分析
                           </Link>
                           <Button

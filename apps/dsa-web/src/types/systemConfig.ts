@@ -5,6 +5,7 @@ export type SystemConfigCategory =
   | 'notification'
   | 'system'
   | 'agent'
+  | 'crawler'
   | 'market_scan'
   | 'backtest'
   | 'uncategorized';

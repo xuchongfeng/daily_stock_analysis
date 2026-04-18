@@ -41,6 +41,7 @@ from sqlalchemy import (
     delete,
     desc,
     asc,
+    insert,
     case,
     event,
     func,
@@ -655,6 +656,94 @@ class LLMUsage(Base):
     called_at = Column(DateTime, default=datetime.now, index=True)
 
 
+class CrawlerThsConceptRun(Base):
+    """同花顺概念爬虫一次运行的元数据（与磁盘目录 ``ths_concept/<run_id>/`` 对应）。"""
+
+    __tablename__ = "crawler_ths_concept_run"
+
+    run_id = Column(String(32), primary_key=True)
+    task_id = Column(String(32), nullable=False, default="ths-concept", index=True)
+    catalog_url = Column(Text, nullable=False)
+    dry_run = Column(Boolean, nullable=False, default=False)
+    ok = Column(Boolean, nullable=False, default=False)
+    message = Column(Text)
+    stats_json = Column(Text)
+    errors_json = Column(Text)
+    output_path = Column(Text)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class CrawlerThsConcept(Base):
+    """单次运行解析到的概念（目录或完整抓取）。"""
+
+    __tablename__ = "crawler_ths_concept"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(
+        String(32),
+        ForeignKey("crawler_ths_concept_run.run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    concept_code = Column(String(32), nullable=False, index=True)
+    concept_name = Column(String(256))
+    detail_url = Column(Text)
+    crawled_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "concept_code", name="uix_crawler_ths_concept_run_code"),
+        Index("ix_crawler_ths_concept_run_name", "run_id", "concept_name"),
+    )
+
+
+class CrawlerThsConceptConstituent(Base):
+    """单次运行下某概念的成分股（非 dry-run 且 AJAX 成功时写入）。"""
+
+    __tablename__ = "crawler_ths_concept_constituent"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(
+        String(32),
+        ForeignKey("crawler_ths_concept_run.run_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    concept_code = Column(String(32), nullable=False, index=True)
+    stock_code = Column(String(16), nullable=False, index=True)
+    stock_name = Column(String(128))
+    page = Column(Integer, nullable=False, default=1)
+    row_index = Column(Integer, nullable=False, default=0)
+    crawled_at = Column(DateTime)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "concept_code",
+            "stock_code",
+            name="uix_crawler_ths_const_run_concept_stock",
+        ),
+        Index("ix_crawler_ths_const_stock", "stock_code", "run_id"),
+    )
+
+
+def _parse_crawl_iso_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式
@@ -784,6 +873,7 @@ class DatabaseManager:
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute(f"PRAGMA busy_timeout={int(self._sqlite_busy_timeout_ms)}")
+                cursor.execute("PRAGMA foreign_keys=ON")
                 if self._sqlite_file_db and self._sqlite_wal_enabled:
                     cursor.execute("PRAGMA journal_mode=WAL")
             except Exception as exc:
@@ -2096,6 +2186,15 @@ class DatabaseManager:
             return json.dumps(str(data), ensure_ascii=False)
 
     @staticmethod
+    def _safe_json_loads(raw: Optional[str], default: Any) -> Any:
+        if not raw:
+            return default
+        try:
+            return json.loads(raw)
+        except Exception:
+            return default
+
+    @staticmethod
     def _build_raw_result(result: Any) -> Dict[str, Any]:
         """
         生成完整分析结果字典
@@ -2264,6 +2363,253 @@ class DatabaseManager:
         raw_key = f"{code}|{title}|{source}|{date_str}"
         digest = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
         return f"no-url:{code}:{digest}"
+
+    def save_ths_concept_crawl(
+        self,
+        *,
+        run_id: str,
+        task_id: str,
+        catalog_url: str,
+        dry_run: bool,
+        ok: bool,
+        message: str,
+        stats: Dict[str, Any],
+        errors: List[str],
+        output_path: str,
+        concepts: List[Dict[str, Any]],
+        constituents: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """
+        将同花顺概念爬虫一次运行的结果写入 SQLite（运行表 + 概念 + 成分）。
+
+        同一 ``run_id`` 若已存在则先删除子表与运行行再插入，便于幂等重放。
+        """
+        constituents = constituents or []
+        stats_payload = self._safe_json_dumps(stats)
+        errors_payload = self._safe_json_dumps(errors)
+        msg = message or ""
+
+        def _write(session: Session) -> None:
+            session.execute(
+                delete(CrawlerThsConceptRun).where(CrawlerThsConceptRun.run_id == run_id)
+            )
+            session.add(
+                CrawlerThsConceptRun(
+                    run_id=run_id,
+                    task_id=task_id,
+                    catalog_url=catalog_url,
+                    dry_run=dry_run,
+                    ok=ok,
+                    message=msg,
+                    stats_json=stats_payload,
+                    errors_json=errors_payload,
+                    output_path=output_path,
+                    created_at=datetime.now(),
+                )
+            )
+            session.flush()
+            if concepts:
+                concept_rows = []
+                for row in concepts:
+                    code = (row.get("concept_code") or "").strip()
+                    if not code:
+                        continue
+                    concept_rows.append(
+                        {
+                            "run_id": run_id,
+                            "concept_code": code,
+                            "concept_name": (row.get("concept_name") or None),
+                            "detail_url": row.get("detail_url"),
+                            "crawled_at": _parse_crawl_iso_datetime(row.get("crawled_at"))
+                            or datetime.now(),
+                        }
+                    )
+                if concept_rows:
+                    chunk = 800
+                    for i in range(0, len(concept_rows), chunk):
+                        session.execute(insert(CrawlerThsConcept), concept_rows[i : i + chunk])
+            if constituents:
+                const_rows = []
+                for row in constituents:
+                    cc = (row.get("concept_code") or "").strip()
+                    sc = (row.get("stock_code") or "").strip()
+                    if not cc or not sc:
+                        continue
+                    const_rows.append(
+                        {
+                            "run_id": run_id,
+                            "concept_code": cc,
+                            "stock_code": sc,
+                            "stock_name": row.get("stock_name"),
+                            "page": int(row.get("page") or 1),
+                            "row_index": int(row.get("row_index") or 0),
+                            "crawled_at": _parse_crawl_iso_datetime(row.get("crawled_at"))
+                            or datetime.now(),
+                        }
+                    )
+                if const_rows:
+                    chunk = 1200
+                    for i in range(0, len(const_rows), chunk):
+                        session.execute(
+                            insert(CrawlerThsConceptConstituent),
+                            const_rows[i : i + chunk],
+                        )
+
+        self._run_write_transaction(f"save_ths_concept_crawl[{run_id}]", _write)
+
+    def ths_concept_run_exists(self, run_id: str) -> bool:
+        rid = (run_id or "").strip()
+        if not rid:
+            return False
+        with self.get_session() as session:
+            stmt = select(CrawlerThsConceptRun.run_id).where(CrawlerThsConceptRun.run_id == rid).limit(1)
+            return session.execute(stmt).scalar_one_or_none() is not None
+
+    def list_ths_concept_runs(self, *, limit: int = 30, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
+        """列出同花顺概念爬虫运行记录（新在前），附带概念数与成分条数。"""
+        lim = max(1, min(int(limit), 200))
+        off = max(0, int(offset))
+        with self.get_session() as session:
+            total = int(session.scalar(select(func.count()).select_from(CrawlerThsConceptRun)) or 0)
+            rows = list(
+                session.scalars(
+                    select(CrawlerThsConceptRun)
+                    .order_by(desc(CrawlerThsConceptRun.created_at))
+                    .offset(off)
+                    .limit(lim)
+                ).all()
+            )
+        run_ids = [r.run_id for r in rows]
+        concept_counts: Dict[str, int] = {}
+        const_counts: Dict[str, int] = {}
+        if run_ids:
+            with self.get_session() as session:
+                for rid, cnt in session.execute(
+                    select(CrawlerThsConcept.run_id, func.count(CrawlerThsConcept.id))
+                    .where(CrawlerThsConcept.run_id.in_(run_ids))
+                    .group_by(CrawlerThsConcept.run_id)
+                ):
+                    concept_counts[str(rid)] = int(cnt)
+                for rid, cnt in session.execute(
+                    select(CrawlerThsConceptConstituent.run_id, func.count(CrawlerThsConceptConstituent.id))
+                    .where(CrawlerThsConceptConstituent.run_id.in_(run_ids))
+                    .group_by(CrawlerThsConceptConstituent.run_id)
+                ):
+                    const_counts[str(rid)] = int(cnt)
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "run_id": r.run_id,
+                    "task_id": r.task_id,
+                    "catalog_url": r.catalog_url,
+                    "dry_run": bool(r.dry_run),
+                    "ok": bool(r.ok),
+                    "message": r.message,
+                    "stats": self._safe_json_loads(r.stats_json, {}),
+                    "errors": self._safe_json_loads(r.errors_json, []),
+                    "output_path": r.output_path,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "concept_count": concept_counts.get(r.run_id, 0),
+                    "constituent_count": const_counts.get(r.run_id, 0),
+                }
+            )
+        return out, total
+
+    def list_ths_concepts_for_run(
+        self,
+        run_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        q: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """单次运行下的概念列表（分页，可选按代码/名称模糊搜索）。"""
+        rid = (run_id or "").strip()
+        if not rid:
+            return [], 0
+        lim = max(1, min(int(limit), 500))
+        off = max(0, int(offset))
+        qstrip = str(q).strip() if q else ""
+        term = f"%{qstrip.replace('%', '').replace('_', '')}%" if qstrip else None
+        with self.get_session() as session:
+            filters = [CrawlerThsConcept.run_id == rid]
+            if term:
+                filters.append(
+                    or_(
+                        CrawlerThsConcept.concept_code.like(term),
+                        CrawlerThsConcept.concept_name.like(term),
+                    )
+                )
+            total = int(session.scalar(select(func.count()).select_from(CrawlerThsConcept).where(and_(*filters))) or 0)
+            rows = list(
+                session.scalars(
+                    select(CrawlerThsConcept)
+                    .where(and_(*filters))
+                    .order_by(CrawlerThsConcept.concept_code)
+                    .offset(off)
+                    .limit(lim)
+                ).all()
+            )
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "concept_code": r.concept_code,
+                    "concept_name": r.concept_name,
+                    "detail_url": r.detail_url,
+                    "crawled_at": r.crawled_at.isoformat() if r.crawled_at else None,
+                }
+            )
+        return items, total
+
+    def list_ths_constituents_for_run(
+        self,
+        run_id: str,
+        *,
+        concept_code: Optional[str] = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """单次运行下的成分股（可按概念代码筛选）。"""
+        rid = (run_id or "").strip()
+        if not rid:
+            return [], 0
+        lim = max(1, min(int(limit), 1000))
+        off = max(0, int(offset))
+        cc = (concept_code or "").strip() or None
+        with self.get_session() as session:
+            cond = [CrawlerThsConceptConstituent.run_id == rid]
+            if cc:
+                cond.append(CrawlerThsConceptConstituent.concept_code == cc)
+            count_stmt = select(func.count()).select_from(CrawlerThsConceptConstituent).where(and_(*cond))
+            total = int(session.scalar(count_stmt) or 0)
+            rows = list(
+                session.scalars(
+                    select(CrawlerThsConceptConstituent)
+                    .where(and_(*cond))
+                    .order_by(
+                        CrawlerThsConceptConstituent.concept_code,
+                        CrawlerThsConceptConstituent.page,
+                        CrawlerThsConceptConstituent.row_index,
+                    )
+                    .offset(off)
+                    .limit(lim)
+                ).all()
+            )
+        items = []
+        for r in rows:
+            items.append(
+                {
+                    "concept_code": r.concept_code,
+                    "stock_code": r.stock_code,
+                    "stock_name": r.stock_name,
+                    "page": r.page,
+                    "row_index": r.row_index,
+                    "crawled_at": r.crawled_at.isoformat() if r.crawled_at else None,
+                }
+            )
+        return items, total
 
     def save_conversation_message(self, session_id: str, role: str, content: str) -> None:
         """

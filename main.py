@@ -223,6 +223,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --market-scan volume    # A 股成交量 Top N 批量分析
   python main.py --top-movers            # 等价 --market-scan gainers
   python main.py --market-scan gainers --market-scan-date 2026-04-03
+  python main.py --crawl ths-concept --dry-run   # 同花顺概念：仅解析目录（默认自动预取 Cookie，可选手动配置）
         '''
     )
 
@@ -406,6 +407,35 @@ def parse_arguments() -> argparse.Namespace:
         metavar='YYYY-MM-DD',
         dest='market_scan_date',
         help='指定 A 股交易日：开市检查与批次号日期段（涨幅 tm_*/成交量 tv_*）；数据源见 docs/market-scanner.md',
+    )
+
+    parser.add_argument(
+        '--crawl',
+        choices=['ths-concept'],
+        default=None,
+        dest='crawl',
+        help='运行独立爬取任务（与 --serve / 定时 / 榜单扫描等勿同时使用）；见 docs/crawler.md',
+    )
+    parser.add_argument(
+        '--crawl-output-dir',
+        type=str,
+        default=None,
+        dest='crawl_output_dir',
+        help='覆盖 CRAWLER_OUTPUT_DIR：爬取结果根目录',
+    )
+    parser.add_argument(
+        '--crawl-max-concepts',
+        type=int,
+        default=None,
+        dest='crawl_max_concepts',
+        help='覆盖 CRAWLER_THS_MAX_CONCEPTS：最多抓取多少个概念成分',
+    )
+    parser.add_argument(
+        '--crawl-max-pages',
+        type=int,
+        default=None,
+        dest='crawl_max_pages',
+        help='覆盖 CRAWLER_THS_MAX_PAGES：每个概念最多翻页数',
     )
 
     return parser.parse_args()
@@ -842,6 +872,34 @@ def main() -> int:
         if scan_mode or getattr(args, "top_movers", False):
             logger.error("--my-watchlist 与榜单扫描参数不能同时使用。")
             return 1
+
+    if getattr(args, "crawl", None):
+        if args.serve or args.serve_only or args.schedule or config.schedule_enabled:
+            logger.error("--crawl 与 --serve/--serve-only/--schedule 不能同时使用。")
+            return 1
+        if getattr(args, "backtest", False) or getattr(args, "market_review", False):
+            logger.error("--crawl 与 --backtest/--market-review 不能同时使用。")
+            return 1
+        scan_mode_c = getattr(args, "market_scan", None)
+        if scan_mode_c or getattr(args, "top_movers", False):
+            logger.error("--crawl 与榜单扫描参数不能同时使用。")
+            return 1
+        if args.stocks or getattr(args, "my_watchlist", False):
+            logger.error("--crawl 与 --stocks/--my-watchlist 不能同时使用。")
+            return 1
+
+        from src.crawler.runner import run_crawl_cli
+
+        out = Path(args.crawl_output_dir).expanduser() if getattr(args, "crawl_output_dir", None) else None
+        logger.info("模式: 爬取任务 (%s)", args.crawl)
+        code = run_crawl_cli(
+            args.crawl,
+            dry_run=args.dry_run,
+            output_dir=out,
+            max_concepts=getattr(args, "crawl_max_concepts", None),
+            max_pages=getattr(args, "crawl_max_pages", None),
+        )
+        return code
 
     # 兼容旧版 WEBUI_ENABLED 环境变量
     if config.webui_enabled and not (args.serve or args.serve_only):

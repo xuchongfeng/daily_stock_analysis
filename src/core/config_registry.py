@@ -50,6 +50,12 @@ _CATEGORY_DEFINITIONS: List[Dict[str, Any]] = [
         "display_order": 55,
     },
     {
+        "category": "crawler",
+        "title": "Crawler",
+        "description": "Tonghuashun (THS) web crawl for concept boards (`python main.py --crawl ths-concept`).",
+        "display_order": 56,
+    },
+    {
         "category": "market_scan",
         "title": "Market scanner",
         "description": "A-share leaderboard batch scans (gainers and volume Top-N) and shared limits.",
@@ -100,6 +106,240 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "options": [],
         "validation": {},
         "display_order": 11,
+    },
+    "CRAWLER_THS_COOKIE": {
+        "title": "THS full Cookie header",
+        "description": (
+            "Optional full ``Cookie`` header string from the browser for q.10jqka.com.cn (overrides auto bootstrap). "
+            "Takes precedence over ``CRAWLER_THS_HEXIN_V``. See docs/crawler.md."
+        ),
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "textarea",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 10,
+    },
+    "CRAWLER_THS_HEXIN_V": {
+        "title": "THS hexin-v (Cookie v)",
+        "description": (
+            "Optional for ``python main.py --crawl ths-concept``: same as browser Cookie ``v`` on q.10jqka.com.cn; "
+            "sent as ``hexin-v`` and ``Cookie: v=...``. When unset, the client first requests "
+            "``CRAWLER_THS_BOOTSTRAP_URL`` (default main site https://www.10jqka.com.cn/) to obtain ``v`` automatically unless "
+            "``CRAWLER_THS_AUTO_BOOTSTRAP`` is false. See docs/crawler.md."
+        ),
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "password",
+        "is_sensitive": True,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 20,
+    },
+    "CRAWLER_THS_AUTO_BOOTSTRAP": {
+        "title": "THS auto cookie bootstrap",
+        "description": (
+            "When true (default) and neither ``CRAWLER_THS_HEXIN_V`` nor ``CRAWLER_THS_COOKIE`` is set, "
+            "the crawler issues one GET to ``CRAWLER_THS_BOOTSTRAP_URL`` before catalog/AJAX to capture ``v``."
+        ),
+        "category": "crawler",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 30,
+    },
+    "CRAWLER_THS_BOOTSTRAP_URL": {
+        "title": "THS cookie bootstrap URL",
+        "description": (
+            "First-party page used to seed httpx cookies (typically returns ``Set-Cookie: v=...``). "
+            "Default: ``https://www.10jqka.com.cn/`` (main site; navigation-style headers, Referer q.10jqka.com.cn)."
+        ),
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 40,
+    },
+    "CRAWLER_USER_AGENT": {
+        "title": "Crawler User-Agent",
+        "description": (
+            "HTTP User-Agent for crawl requests. When empty, the CLI uses a built-in desktop Chrome string. "
+            "Web settings save to ``.env``; restart or reload may be required for CLI."
+        ),
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 50,
+    },
+    "CRAWLER_HTTP_VERIFY_SSL": {
+        "title": "Crawler HTTPS certificate verification",
+        "description": (
+            "When true (default), httpx verifies TLS certificates. Set false only for local debugging "
+            "(MITM proxies, packet capture with self-signed roots); not recommended in production."
+        ),
+        "category": "crawler",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 55,
+    },
+    "CRAWLER_THS_CATALOG_URL": {
+        "title": "THS concept catalog URL",
+        "description": "HTML page listing concept links (default Tonghuashun hub). See docs/crawler.md.",
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 60,
+    },
+    "CRAWLER_DELAY_MS": {
+        "title": "Crawler delay between requests (ms)",
+        "description": "Sleep between HTTP calls to reduce rate-limit / WAF risk (default 2000 ms = 2 s when unset).",
+        "category": "crawler",
+        "data_type": "integer",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {"min": 0, "max": 600000},
+        "display_order": 70,
+    },
+    "CRAWLER_THS_PREFLIGHT_DETAIL": {
+        "title": "THS preflight concept detail page",
+        "description": "When true (default), GET each concept detail HTML once before AJAX constituents (reduces HTTP 401/403).",
+        "category": "crawler",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 80,
+    },
+    "CRAWLER_OUTPUT_DIR": {
+        "title": "Crawler output directory",
+        "description": "Root directory for crawl task outputs (e.g. data/crawler/ths_concept/<run_id>/).",
+        "category": "crawler",
+        "data_type": "string",
+        "ui_control": "text",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {},
+        "display_order": 100,
+    },
+    "CRAWLER_THS_PERSIST_DB": {
+        "title": "Persist THS concept crawl to SQLite",
+        "description": (
+            "When true (default), each ``python main.py --crawl ths-concept`` run upserts rows into "
+            "``crawler_ths_concept_run`` / ``crawler_ths_concept`` / ``crawler_ths_concept_constituent`` "
+            "on the app database (same file as ``DATABASE_PATH``). Set false to only write jsonl on disk."
+        ),
+        "category": "crawler",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "true",
+        "options": [],
+        "validation": {},
+        "display_order": 110,
+    },
+    "CRAWLER_SAVE_RAW_HTML": {
+        "title": "Save raw crawl HTML",
+        "description": "When true, save raw HTML snapshots under the crawl run directory.",
+        "category": "crawler",
+        "data_type": "boolean",
+        "ui_control": "switch",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "false",
+        "options": [],
+        "validation": {},
+        "display_order": 120,
+    },
+    "CRAWLER_REQUEST_TIMEOUT_SEC": {
+        "title": "Crawler HTTP timeout (seconds)",
+        "description": "Per-request timeout for httpx (default 30).",
+        "category": "crawler",
+        "data_type": "number",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {"min": 5, "max": 300},
+        "display_order": 130,
+    },
+    "CRAWLER_THS_MAX_PAGES": {
+        "title": "THS max pages per concept",
+        "description": "Optional cap on constituent AJAX pages per concept (empty = no cap).",
+        "category": "crawler",
+        "data_type": "integer",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {"min": 1, "max": 5000},
+        "display_order": 140,
+    },
+    "CRAWLER_THS_MAX_CONCEPTS": {
+        "title": "THS max concepts per run",
+        "description": "Optional cap on how many concepts to crawl after catalog parse (empty = all).",
+        "category": "crawler",
+        "data_type": "integer",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": None,
+        "options": [],
+        "validation": {"min": 1, "max": 10000},
+        "display_order": 150,
     },
     # ------------------------------------------------------------------
     # AI Model – LiteLLM unified config
@@ -2008,6 +2248,8 @@ def _is_sensitive_key(key: str) -> bool:
 def _infer_category(key: str) -> str:
     if key == "STOCK_LIST":
         return "base"
+    if key.startswith("CRAWLER_"):
+        return "crawler"
     if key.startswith("BACKTEST_"):
         return "backtest"
     if key.startswith(("GEMINI_", "OPENAI_", "ANTHROPIC_", "LITELLM_", "AIHUBMIX_", "DEEPSEEK_", "LLM_")):

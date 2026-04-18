@@ -7,6 +7,7 @@ const categoryTitleMap: Record<SystemConfigCategory, string> = {
   notification: '通知渠道',
   system: '系统设置',
   agent: 'Agent 设置',
+  crawler: '网页爬虫',
   market_scan: '榜单扫描',
   backtest: '回测配置',
   uncategorized: '其他',
@@ -20,6 +21,7 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
   system: '管理调度、日志、端口等系统级参数。',
   agent: '管理 Agent 模式、策略与多 Agent 编排配置。',
   market_scan: '管理涨幅榜与成交量榜批量扫描参数（TOP_MOVERS_*）。',
+  crawler: '管理同花顺概念爬虫（THS）与 Cookie、预取、输出等参数（对应 CLI --crawl ths-concept）。',
   backtest: '管理回测开关、评估窗口和引擎参数。',
   uncategorized: '其他未归类的配置项。',
 };
@@ -83,6 +85,20 @@ const fieldTitleMap: Record<string, string> = {
   BACKTEST_MIN_AGE_DAYS: '回测最小历史天数',
   BACKTEST_ENGINE_VERSION: '回测引擎版本',
   BACKTEST_NEUTRAL_BAND_PCT: '回测中性区间阈值（%）',
+  CRAWLER_THS_COOKIE: '同花顺完整 Cookie',
+  CRAWLER_THS_HEXIN_V: '同花顺 hexin-v（Cookie v）',
+  CRAWLER_THS_AUTO_BOOTSTRAP: '自动预取 Cookie',
+  CRAWLER_THS_BOOTSTRAP_URL: 'Cookie 预取页面 URL',
+  CRAWLER_USER_AGENT: '爬虫 User-Agent',
+  CRAWLER_THS_CATALOG_URL: '概念目录页 URL',
+  CRAWLER_DELAY_MS: '请求间隔（毫秒）',
+  CRAWLER_THS_PREFLIGHT_DETAIL: '拉成分前先打开概念详情页',
+  CRAWLER_OUTPUT_DIR: '爬虫输出根目录',
+  CRAWLER_THS_PERSIST_DB: '爬取结果写入 SQLite',
+  CRAWLER_SAVE_RAW_HTML: '保存原始 HTML',
+  CRAWLER_REQUEST_TIMEOUT_SEC: 'HTTP 超时（秒）',
+  CRAWLER_THS_MAX_PAGES: '单概念最大翻页数',
+  CRAWLER_THS_MAX_CONCEPTS: '单次最多概念数',
 };
 
 const fieldDescriptionMap: Record<string, string> = {
@@ -144,6 +160,23 @@ const fieldDescriptionMap: Record<string, string> = {
   BACKTEST_MIN_AGE_DAYS: '仅回测早于该天数的分析记录。',
   BACKTEST_ENGINE_VERSION: '回测引擎版本标识，用于区分结果版本。',
   BACKTEST_NEUTRAL_BAND_PCT: '中性区间阈值百分比，例如 2 表示 -2%~+2%。',
+  CRAWLER_THS_COOKIE:
+    '浏览器开发者工具中复制整段 Cookie 请求头（优先级高于「仅 v」）。留空则尝试自动预取或仅用 hexin-v。',
+  CRAWLER_THS_HEXIN_V:
+    '与 q.10jqka.com.cn 下 Cookie「v」相同，会作为 hexin-v 头发送；留空时可依赖自动预取。',
+  CRAWLER_THS_AUTO_BOOTSTRAP:
+    '未配置 Cookie/hexin-v 时，先 GET 预取页以获取站点下发的 v（默认同花顺主站 www.10jqka.com.cn）。',
+  CRAWLER_THS_BOOTSTRAP_URL: '用于首次种 Cookie 的页面地址，一般无需修改。',
+  CRAWLER_USER_AGENT: '留空时 CLI 使用内置桌面 Chrome UA；此处保存后写入 .env。',
+  CRAWLER_THS_CATALOG_URL: '概念板块目录 HTML 地址，默认漂亮100聚合页。',
+  CRAWLER_DELAY_MS: '两次 HTTP 请求之间的休眠毫秒数，降低风控与 403 概率。',
+  CRAWLER_THS_PREFLIGHT_DETAIL: '每个概念在请求成分 AJAX 前先 GET 一次详情页，减少 WAF 403。',
+  CRAWLER_OUTPUT_DIR: 'jsonl/manifest 输出根目录，如 data/crawler。',
+  CRAWLER_THS_PERSIST_DB: '是否写入应用 SQLite（crawler_ths_* 表）；关闭则仅写磁盘 jsonl。',
+  CRAWLER_SAVE_RAW_HTML: '是否在每次 run 目录下保存原始 HTML 片段。',
+  CRAWLER_REQUEST_TIMEOUT_SEC: '单次 HTTP 请求超时时间（秒）。',
+  CRAWLER_THS_MAX_PAGES: '每个概念最多抓取多少页成分（留空表示不限制）。',
+  CRAWLER_THS_MAX_CONCEPTS: '本次运行最多处理多少个概念（留空表示不限制）。',
 };
 
 export function getCategoryTitleZh(category: SystemConfigCategory, fallback?: string): string {

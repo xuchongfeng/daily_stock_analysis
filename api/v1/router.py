@@ -24,6 +24,7 @@ from api.v1.endpoints import (
     market_scan,
     signal_digest,
     watchlist,
+    crawler_ths,
 )
 
 # 创建 v1 版本主路由
@@ -104,4 +105,10 @@ router.include_router(
     watchlist.router,
     prefix="/watchlist",
     tags=["Watchlist"],
+)
+
+router.include_router(
+    crawler_ths.router,
+    prefix="/crawler/ths-concept",
+    tags=["Crawler"],
 )

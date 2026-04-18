@@ -22,6 +22,7 @@ from api.v1.endpoints import (
     market_scan,
     signal_digest,
     watchlist,
+    crawler_ths,
 )
 __all__ = [
     "health",
@@ -37,4 +38,5 @@ __all__ = [
     "market_scan",
     "signal_digest",
     "watchlist",
+    "crawler_ths",
 ]
