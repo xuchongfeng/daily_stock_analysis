@@ -83,3 +83,30 @@ class MarketScanNotifyResponse(BaseModel):
     notification_sent: bool = False
     detail_level: Optional[str] = Field(None, description="请求使用的详细程度")
     top_n_requested: int = Field(0, description="请求的上限条数")
+
+
+class VolumeScanDailyGeScorePoint(BaseModel):
+    """成交量榜：某交易日评分不低于阈值的去重股票数量。"""
+
+    trade_date: str = Field(..., description="交易日 YYYY-MM-DD（来自批次号 tv_YYYYMMDD_*）")
+    stock_count: int = Field(..., description="该日评分 >= min_score 的股票数（按代码去重）")
+    min_score: int = Field(70, description="使用的评分下限（含）")
+
+
+class VolumeScanDailyGeScoreSeriesResponse(BaseModel):
+    points: List[VolumeScanDailyGeScorePoint] = Field(default_factory=list)
+
+
+class VolumeScanStockRatingPoint(BaseModel):
+    id: Optional[int] = Field(None, description="analysis_history 主键，用于获取 Markdown 报告")
+    trade_date: str = Field(..., description="交易日 YYYY-MM-DD")
+    sentiment_score: int = Field(..., description="AI 评分（当日最新一条成交量榜分析）")
+    batch_run_id: str = Field("", description="对应批次号")
+    rank_in_batch: Optional[int] = Field(None, description="当日榜单名次（若有）")
+    stock_name: Optional[str] = Field(None, description="分析记录中的股票名称")
+    created_at: Optional[str] = Field(None, description="该条记录创建时间")
+
+
+class VolumeScanStockRatingSeriesResponse(BaseModel):
+    stock_code: str = Field("", description="查询使用的股票代码（规范化后）")
+    points: List[VolumeScanStockRatingPoint] = Field(default_factory=list)

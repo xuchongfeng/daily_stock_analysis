@@ -78,6 +78,11 @@ python main.py --market-scan volume --dry-run --force-run --top-movers-limit 100
 - `POST .../batches/{batch_run_id}/resume?dry_run=false&send_notification=true` — **续跑**：按批次内交易日与榜单类型重建股票池，**排除**该 `batch_run_id` 已在 `analysis_history` 落库的代码，对其余标的继续分析并仍写入同一批次；`dry_run=true` 时只拉数据不跑 LLM。Web「榜单扫描」页提供「重跑（补全未完成）」按钮。
 - `POST .../batches/{batch_run_id}/notify` — **手动推送通知**：从 `analysis_history` 读取该批次已落库记录，按 **AI 评分（sentiment_score）降序** 取前 `top_n` 条（请求体 JSON：`top_n` 默认 15、上限 200；`detail_level`：`summary` 仅列表行，`detailed` 每只股票下附带 `analysis_summary` 摘要，单股摘要过长会截断）。与跑批结束时的自动汇总不同：**不依赖** `TOP_MOVERS_NOTIFY_ENABLED`，但仍需已配置至少一种通知渠道。Web「榜单扫描」页提供「推送条数」「通知内容」「发送通知」控件。
 
+**评分历史（仅成交量榜 `tv_*` 批次）**
+
+- `GET .../stats/volume-rating-threshold-daily?min_score=70&start_date=&end_date=` — 按批次号中的交易日（`tv_YYYYMMDD_*`）汇总：每个交易日、每只股票取当日所有成交量榜记录中的 **最高** `sentiment_score`，再统计评分 **≥ min_score**（默认 70）的去重股票数，返回折线数据 `points[{ trade_date, stock_count, min_score }]`。可选 `start_date` / `end_date`（`YYYY-MM-DD`）缩小范围。
+- `GET .../stocks/{stock_code}/volume-rating-series?start_date=&end_date=` — 单只股票在成交量榜扫描中的 **按交易日** `sentiment_score`；同一交易日多条记录时取 **按 `created_at`、`id` 排序后的最后一条**（通常对应最后一次分析）。每条返回含 **`id`**（`analysis_history` 主键）；Web「榜单扫描 → 评分历史」中点击折线圆点选中该日，在图下固定操作条点「查看报告」拉取 Markdown（Tooltip 仅展示数值，避免随鼠标移动无法点中按钮）。
+
 续跑使用**当前** `TOP_MOVERS_LIMIT`、去重与排除 ST 等配置重建池子，若与首次跑批时不一致，待补全集合可能与当时略有差异。
 
 ## GitHub Actions

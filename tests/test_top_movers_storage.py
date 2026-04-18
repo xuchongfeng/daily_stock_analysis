@@ -163,3 +163,78 @@ class TopMoversStorageTest(unittest.TestCase):
         )
         self.assertEqual(total, 1)
         self.assertEqual(rows[0].ref_trade_volume, 12345.0)
+
+    def test_volume_scan_daily_ge_score_counts_and_stock_series(self) -> None:
+        bid = "tv_20260410_deadbeef"
+        with self.db.get_session() as session:
+            session.add(
+                AnalysisHistory(
+                    query_id="v1",
+                    code="600519",
+                    name="茅台",
+                    report_type="simple",
+                    sentiment_score=72,
+                    operation_advice="持有",
+                    trend_prediction="—",
+                    analysis_summary="s",
+                    raw_result="{}",
+                    batch_kind="top_volume_daily",
+                    batch_run_id=bid,
+                    rank_in_batch=3,
+                    ref_change_pct=1.0,
+                    ref_trade_volume=100.0,
+                )
+            )
+            session.add(
+                AnalysisHistory(
+                    query_id="v2",
+                    code="000001",
+                    name="平安",
+                    report_type="simple",
+                    sentiment_score=65,
+                    operation_advice="观望",
+                    trend_prediction="—",
+                    analysis_summary="s",
+                    raw_result="{}",
+                    batch_kind="top_volume_daily",
+                    batch_run_id=bid,
+                    rank_in_batch=10,
+                    ref_change_pct=0.5,
+                    ref_trade_volume=200.0,
+                )
+            )
+            session.add(
+                AnalysisHistory(
+                    query_id="v3",
+                    code="600519",
+                    name="茅台",
+                    report_type="simple",
+                    sentiment_score=68,
+                    operation_advice="观望",
+                    trend_prediction="—",
+                    analysis_summary="s",
+                    raw_result="{}",
+                    batch_kind="top_volume_daily",
+                    batch_run_id=bid,
+                    rank_in_batch=5,
+                    ref_change_pct=-0.2,
+                    ref_trade_volume=150.0,
+                )
+            )
+            session.commit()
+
+        daily = self.db.get_volume_scan_daily_ge_score_stock_counts(min_score=70)
+        self.assertEqual(len(daily), 1)
+        self.assertEqual(daily[0]["trade_date"], "2026-04-10")
+        self.assertEqual(daily[0]["stock_count"], 1)
+
+        daily60 = self.db.get_volume_scan_daily_ge_score_stock_counts(min_score=60)
+        self.assertEqual(daily60[0]["stock_count"], 2)
+
+        series = self.db.get_volume_scan_stock_rating_series("600519")
+        self.assertEqual(len(series), 1)
+        self.assertEqual(series[0]["trade_date"], "2026-04-10")
+        self.assertEqual(series[0]["sentiment_score"], 68)
+        self.assertEqual(series[0]["batch_run_id"], bid)
+        self.assertIn("id", series[0])
+        self.assertIsNotNone(series[0]["id"])

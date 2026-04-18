@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import { marketScanApi } from '../api/marketScan';
 import { getParsedApiError } from '../api/error';
@@ -17,6 +18,7 @@ import { ReportMarkdown } from '../components/report/ReportMarkdown';
 import type { MarketScanBatchSummary, MarketScanItem, MarketScanKindFilter } from '../types/marketScan';
 import { xueqiuStockHref } from '../utils/xueqiu';
 import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
+import { MarketScanRatingHistoryPanel } from './MarketScanRatingHistoryPanel';
 
 const DATE_INPUT_CLASS =
   'h-10 w-full max-w-[11rem] rounded-xl border border-border/60 bg-background px-3 text-sm text-foreground tabular-nums outline-none transition-colors focus-visible:border-[hsl(var(--primary))] focus-visible:ring-2 focus-visible:ring-[hsl(var(--primary))]/25';
@@ -64,7 +66,26 @@ function marketScanNameCell(code: string, name?: string | null) {
   return label;
 }
 
+type MarketScannerMainTab = 'batches' | 'rating';
+
 const MarketScannerPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const mainTab: MarketScannerMainTab =
+    searchParams.get('view') === 'rating' ? 'rating' : 'batches';
+
+  const setMainTab = useCallback(
+    (tab: MarketScannerMainTab) => {
+      const next = new URLSearchParams(searchParams);
+      if (tab === 'rating') {
+        next.set('view', 'rating');
+      } else {
+        next.delete('view');
+      }
+      setSearchParams(next, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
   const [loadError, setLoadError] = useState<ParsedApiError | null>(null);
   const [batches, setBatches] = useState<MarketScanBatchSummary[]>([]);
   const [scanKindTab, setScanKindTab] = useState<MarketScanKindFilter>('all');
@@ -211,12 +232,18 @@ const MarketScannerPage: React.FC = () => {
   }, [selectedBatchId, notifyTopN, notifyDetailLevel]);
 
   useEffect(() => {
+    if (mainTab !== 'batches') {
+      return;
+    }
     void loadBatches();
-  }, [loadBatches]);
+  }, [mainTab, loadBatches]);
 
   useEffect(() => {
+    if (mainTab !== 'batches') {
+      return;
+    }
     void loadItems();
-  }, [loadItems]);
+  }, [mainTab, loadItems]);
 
   useEffect(() => {
     setSortBy('sentiment_score');
@@ -241,31 +268,62 @@ const MarketScannerPage: React.FC = () => {
         </div>
       </div>
 
-      {loadError ? (
+      <div className="flex flex-wrap gap-2 border-b border-border/50 pb-3">
+        <button
+          type="button"
+          onClick={() => setMainTab('batches')}
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            mainTab === 'batches'
+              ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
+              : 'border-border/60 text-secondary-text hover:bg-hover'
+          }`}
+        >
+          批次浏览
+        </button>
+        <button
+          type="button"
+          onClick={() => setMainTab('rating')}
+          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+            mainTab === 'rating'
+              ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
+              : 'border-border/60 text-secondary-text hover:bg-hover'
+          }`}
+        >
+          评分历史
+        </button>
+      </div>
+
+      {mainTab === 'rating' ? (
+        <MarketScanRatingHistoryPanel />
+      ) : null}
+
+      {mainTab === 'batches' && loadError ? (
         <ApiErrorAlert error={loadError} />
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {SCAN_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => {
-              setScanKindTab(t.id);
-              setPage(1);
-            }}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              scanKindTab === t.id
-                ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
-                : 'border-border/60 text-secondary-text hover:bg-hover'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {mainTab === 'batches' ? (
+        <>
+          <div className="flex flex-wrap gap-2">
+            {SCAN_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setScanKindTab(t.id);
+                  setPage(1);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  scanKindTab === t.id
+                    ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
+                    : 'border-border/60 text-secondary-text hover:bg-hover'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(220px,280px)_1fr]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(220px,280px)_1fr]">
         <Card padding="md" variant="bordered">
           <h2 className="mb-3 text-sm font-semibold text-foreground">批次</h2>
           <div className="mb-3 flex flex-col gap-2">
@@ -502,7 +560,9 @@ const MarketScannerPage: React.FC = () => {
             </>
           )}
         </Card>
-      </div>
+          </div>
+        </>
+      ) : null}
 
       {preview?.id != null ? (
         <ReportMarkdown

@@ -71,3 +71,29 @@ export interface MarketScanNotifyResponse {
   detailLevel?: string | null;
   topNRequested: number;
 }
+
+export interface VolumeScanDailyGeScorePoint {
+  tradeDate: string;
+  stockCount: number;
+  minScore: number;
+}
+
+export interface VolumeScanDailyGeScoreSeriesResponse {
+  points: VolumeScanDailyGeScorePoint[];
+}
+
+export interface VolumeScanStockRatingPoint {
+  /** analysis_history 主键，用于打开报告抽屉 */
+  id?: number | null;
+  tradeDate: string;
+  sentimentScore: number;
+  batchRunId: string;
+  rankInBatch?: number | null;
+  stockName?: string | null;
+  createdAt?: string | null;
+}
+
+export interface VolumeScanStockRatingSeriesResponse {
+  stockCode: string;
+  points: VolumeScanStockRatingPoint[];
+}

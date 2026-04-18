@@ -8,6 +8,8 @@ import type {
   MarketScanNotifyRequestBody,
   MarketScanNotifyResponse,
   MarketScanResumeResponse,
+  VolumeScanDailyGeScoreSeriesResponse,
+  VolumeScanStockRatingSeriesResponse,
 } from '../types/marketScan';
 
 const BASE = '/api/v1/market-scanner';
@@ -70,5 +72,35 @@ export const marketScanApi = {
       }
     );
     return toCamelCase<MarketScanNotifyResponse>(response.data);
+  },
+
+  getVolumeRatingThresholdDaily: async (params?: {
+    minScore?: number;
+    startDate?: string | null;
+    endDate?: string | null;
+  }): Promise<VolumeScanDailyGeScoreSeriesResponse> => {
+    const q: Record<string, string | number> = {};
+    if (params?.minScore != null) q.min_score = params.minScore;
+    if (params?.startDate?.trim()) q.start_date = params.startDate.trim();
+    if (params?.endDate?.trim()) q.end_date = params.endDate.trim();
+    const response = await apiClient.get<Record<string, unknown>>(`${BASE}/stats/volume-rating-threshold-daily`, {
+      params: q,
+    });
+    const data = toCamelCase<VolumeScanDailyGeScoreSeriesResponse>(response.data);
+    return { points: data.points || [] };
+  },
+
+  getStockVolumeRatingSeries: async (
+    stockCode: string,
+    params?: { startDate?: string | null; endDate?: string | null }
+  ): Promise<VolumeScanStockRatingSeriesResponse> => {
+    const q: Record<string, string> = {};
+    if (params?.startDate?.trim()) q.start_date = params.startDate.trim();
+    if (params?.endDate?.trim()) q.end_date = params.endDate.trim();
+    const response = await apiClient.get<Record<string, unknown>>(
+      `${BASE}/stocks/${encodeURIComponent(stockCode.trim())}/volume-rating-series`,
+      { params: q }
+    );
+    return toCamelCase<VolumeScanStockRatingSeriesResponse>(response.data);
   },
 };
