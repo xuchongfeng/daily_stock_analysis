@@ -46,7 +46,7 @@
 | 智能导入 | 多源导入 | 支持图片、CSV/Excel 文件、剪贴板粘贴；Vision LLM 提取代码+名称；置信度分层确认；名称→代码解析（本地+拼音+AkShare） |
 | 历史记录 | 批量管理 | 支持多选、全选及批量删除历史分析记录，优化管理效率与 UI/UX 体验 |
 | 我的自选 | 列表 + CLI | Web `/watchlist` 管理自选；`GET/PUT /api/v1/watchlist` 与 `python main.py --my-watchlist` 共用 JSON（默认 `data/watchlist.json`，`WATCHLIST_FILE` 可覆盖）；信号摘要/报告/历史/榜单/持仓/回测等页可一键加入 |
-| 网页爬虫 | 可选任务 | `python main.py --crawl ths-concept` 拉取同花顺概念目录与成分 AJAX 分页；Web **系统设置 → 网页爬虫** 可配完整 Cookie / hexin-v 等；默认先请求 `www.10jqka.com.cn` 主站取 `v`；默认同步写入 SQLite（`CRAWLER_THS_PERSIST_DB=false` 可关），详见 [docs/crawler.md](docs/crawler.md) |
+| 网页爬虫 | 可选任务 | `python main.py --crawl ths-concept` 拉取同花顺概念目录与成分 AJAX 分页；Web **系统设置 → 网页爬虫** 可配 Cookie / hexin-v 等；**数据爬取** `/data-crawl` 查看落库、同花顺板块与**成交量榜批次**的板块维度对照分析；默认同步写入 SQLite（`CRAWLER_THS_PERSIST_DB=false` 可关），详见 [docs/crawler.md](docs/crawler.md) |
 | 回测 | AI 回测验证 | 自动评估历史分析准确率，支持按股票与分析日期查看“AI 预测 vs 次日实际（1 日窗口）”和准确率 |
 | 榜单扫描 | 涨幅 / 成交量 Top N | 涨幅与成交量两路批量分析共用 `TOP_MOVERS_*`；`python main.py --market-scan gainers|volume`；Web `/market-scanner` 与 `GET /api/v1/market-scanner/*`（`/top-movers` 为兼容路径）；详见 [docs/market-scanner.md](docs/market-scanner.md) |
 | 资讯 | 公司公告 + 资金流 | IntelAgent 新增公告抓取与主力资金流维度（上交所/深交所/cninfo + A 股主力资金流）用于补强舆情链路 |

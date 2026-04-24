@@ -52,3 +52,20 @@ export type ThsConstituentListResponse = {
   runId: string;
   conceptCode?: string | null;
 };
+
+export type ThsVolumeBatchSectorStatItem = {
+  conceptCode: string;
+  conceptName?: string | null;
+  stocksInBatch: number;
+  avgSentimentScore?: number | null;
+  avgChangePct?: number | null;
+  bestRankInBatch?: number | null;
+  avgRefTradeVolume?: number | null;
+};
+
+export type ThsVolumeBatchSectorStatsResponse = {
+  runId: string;
+  batchRunId: string;
+  batchStockCount: number;
+  items: ThsVolumeBatchSectorStatItem[];
+};

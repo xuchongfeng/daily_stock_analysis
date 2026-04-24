@@ -10,6 +10,8 @@ import NotFoundPage from './pages/NotFoundPage';
 import ChatPage from './pages/ChatPage';
 import PortfolioPage from './pages/PortfolioPage';
 import MarketScannerPage from './pages/MarketScannerPage';
+import DataCrawlPage from './pages/DataCrawlPage';
+import SectorVolumeAnalysisPage from './pages/SectorVolumeAnalysisPage';
 import WatchlistPage from './pages/WatchlistPage';
 import ThsConceptCrawlPage from './pages/ThsConceptCrawlPage';
 import { ApiErrorAlert, Shell } from './components/common';
@@ -72,6 +74,8 @@ const AppContent: React.FC = () => {
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/market-scanner" element={<MarketScannerPage />} />
+        <Route path="/data-crawl" element={<DataCrawlPage />} />
+        <Route path="/sector-volume-analysis" element={<SectorVolumeAnalysisPage />} />
         <Route path="/ths-concept-crawl" element={<ThsConceptCrawlPage />} />
         <Route path="/top-movers" element={<MarketScannerPage />} />
         <Route path="/settings" element={<SettingsPage />} />

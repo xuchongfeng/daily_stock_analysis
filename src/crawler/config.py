@@ -58,6 +58,8 @@ class CrawlerConfig:
     auto_bootstrap: bool
     preflight_detail: bool
     http_verify_ssl: bool
+    # 成分 AJAX 遇 HTTP 401/403 或 chameleon 时的额外重试次数（不含首次）；第 n 次重试前休眠 10*n 秒。
+    ths_auth_max_retries: int
 
 
 def load_crawler_config(
@@ -100,6 +102,11 @@ def load_crawler_config(
     auto_bootstrap = _env_bool("CRAWLER_THS_AUTO_BOOTSTRAP", True)
     preflight_detail = _env_bool("CRAWLER_THS_PREFLIGHT_DETAIL", True)
     http_verify_ssl = _env_bool("CRAWLER_HTTP_VERIFY_SSL", True)
+    _auth_retries = _env_int("CRAWLER_THS_AUTH_MAX_RETRIES", 3)
+    if _auth_retries is None:
+        ths_auth_max_retries = 3
+    else:
+        ths_auth_max_retries = max(0, min(30, int(_auth_retries)))
 
     return CrawlerConfig(
         output_dir=output_dir,
@@ -119,4 +126,5 @@ def load_crawler_config(
         auto_bootstrap=auto_bootstrap,
         preflight_detail=preflight_detail,
         http_verify_ssl=http_verify_ssl,
+        ths_auth_max_retries=ths_auth_max_retries,
     )

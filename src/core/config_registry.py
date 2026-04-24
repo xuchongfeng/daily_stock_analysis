@@ -239,6 +239,24 @@ _FIELD_DEFINITIONS: Dict[str, Dict[str, Any]] = {
         "validation": {"min": 0, "max": 600000},
         "display_order": 70,
     },
+    "CRAWLER_THS_AUTH_MAX_RETRIES": {
+        "title": "THS constituent AJAX auth-error retries",
+        "description": (
+            "When THS constituent AJAX returns HTTP 401/403 or a chameleon anti-bot page, retry up to this many "
+            "times after the first attempt (default 3). Before each retry, sleep ``10 * attempt_index`` seconds "
+            "(10s, 20s, …) in addition to ``CRAWLER_DELAY_MS``. Set 0 to disable retries."
+        ),
+        "category": "crawler",
+        "data_type": "integer",
+        "ui_control": "number",
+        "is_sensitive": False,
+        "is_required": False,
+        "is_editable": True,
+        "default_value": "3",
+        "options": [],
+        "validation": {"min": 0, "max": 30},
+        "display_order": 75,
+    },
     "CRAWLER_THS_PREFLIGHT_DETAIL": {
         "title": "THS preflight concept detail page",
         "description": "When true (default), GET each concept detail HTML once before AJAX constituents (reduces HTTP 401/403).",

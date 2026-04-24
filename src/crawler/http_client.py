@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 import httpx
 
@@ -222,41 +222,72 @@ class CrawlHttpClient:
             return f"v={self._cfg.hexin_v}"
         return None
 
+    def _ajax_auth_error_from_http(self, exc: httpx.HTTPStatusError) -> Tuple[int, CrawlAuthError]:
+        code = exc.response.status_code if exc.response is not None else 0
+        snippet = ""
+        try:
+            r401 = exc.response
+            if r401 is not None:
+                snippet = (r401.text or "")[:400].replace("\n", " ")
+        except Exception:
+            pass
+        if snippet:
+            logger.warning("同花顺 AJAX HTTP %s 响应片段: %s", code, snippet)
+        err = CrawlAuthError(
+            f"同花顺成分接口返回 HTTP {code}（多为 WAF / 鉴权拦截）。请确认："
+            "1) 未把 CRAWLER_USER_AGENT 设为机器人串（留空则使用内置 Chrome UA）；"
+            "2) 适当增大 CRAWLER_DELAY_MS（默认 2000，可试 3000～5000）；"
+            "3) 仍失败时在浏览器复制完整 CRAWLER_THS_COOKIE 或有效的 CRAWLER_THS_HEXIN_V。"
+        )
+        return code, err
+
     def get(self, url: str, *, referer: str, ajax: bool = False) -> str:
         self._ensure_ths_bootstrap()
-        self._sleep_delay()
-        headers = self._headers_for_ths(referer=referer, ajax=ajax)
-        ch = self._cookie_header_override()
-        if ch:
-            headers["Cookie"] = ch
-        resp = self._client.get(url, headers=headers)
-        try:
-            resp.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            code = exc.response.status_code if exc.response is not None else 0
-            if ajax and code in (401, 403):
-                snippet = ""
-                try:
-                    r401 = exc.response
-                    if r401 is not None:
-                        snippet = (r401.text or "")[:400].replace("\n", " ")
-                except Exception:
-                    pass
-                if snippet:
-                    logger.warning("同花顺 AJAX HTTP %s 响应片段: %s", code, snippet)
-                raise CrawlAuthError(
-                    f"同花顺成分接口返回 HTTP {code}（多为 WAF / 鉴权拦截）。请确认："
-                    "1) 未把 CRAWLER_USER_AGENT 设为机器人串（留空则使用内置 Chrome UA）；"
-                    "2) 适当增大 CRAWLER_DELAY_MS（默认 2000，可试 3000～5000）；"
-                    "3) 仍失败时在浏览器复制完整 CRAWLER_THS_COOKIE 或有效的 CRAWLER_THS_HEXIN_V。"
-                ) from exc
-            raise
-        text = _decode_response_text(resp)
-        # 列表页有时可无 Cookie；成分 AJAX 几乎必校验 hexin-v / v
-        if ajax and "window.location.href" in text and "chameleon" in text.lower():
-            raise CrawlAuthError(
-                "同花顺返回反爬跳转页：可设置 CRAWLER_THS_HEXIN_V（与浏览器 Cookie「v」一致）或 "
-                "CRAWLER_THS_COOKIE；若未配置，请确认 CRAWLER_THS_AUTO_BOOTSTRAP 为 true 且能访问 "
-                "CRAWLER_THS_BOOTSTRAP_URL（默认 https://www.10jqka.com.cn/）以自动获取「v」。"
-            )
-        return text
+        max_tries = 1 + (self._cfg.ths_auth_max_retries if ajax else 0)
+        last_auth_exc: Optional[CrawlAuthError] = None
+
+        for attempt in range(max_tries):
+            if attempt > 0:
+                wait_sec = 10 * attempt
+                logger.warning(
+                    "同花顺成分请求遇鉴权/反爬类错误，%ds 后进行第 %d/%d 次重试%s",
+                    wait_sec,
+                    attempt + 1,
+                    max_tries,
+                    f"（上次: {last_auth_exc}）" if last_auth_exc else "",
+                )
+                time.sleep(wait_sec)
+
+            self._sleep_delay()
+            headers = self._headers_for_ths(referer=referer, ajax=ajax)
+            ch = self._cookie_header_override()
+            if ch:
+                headers["Cookie"] = ch
+            resp = self._client.get(url, headers=headers)
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                code = exc.response.status_code if exc.response is not None else 0
+                if ajax and code in (401, 403):
+                    _, last_auth_exc = self._ajax_auth_error_from_http(exc)
+                    if attempt + 1 >= max_tries:
+                        raise last_auth_exc
+                    continue
+                raise
+
+            text = _decode_response_text(resp)
+            # 列表页有时可无 Cookie；成分 AJAX 几乎必校验 hexin-v / v
+            if ajax and "window.location.href" in text and "chameleon" in text.lower():
+                last_auth_exc = CrawlAuthError(
+                    "同花顺返回反爬跳转页：可设置 CRAWLER_THS_HEXIN_V（与浏览器 Cookie「v」一致）或 "
+                    "CRAWLER_THS_COOKIE；若未配置，请确认 CRAWLER_THS_AUTO_BOOTSTRAP 为 true 且能访问 "
+                    "CRAWLER_THS_BOOTSTRAP_URL（默认 https://www.10jqka.com.cn/）以自动获取「v」。"
+                )
+                if attempt + 1 >= max_tries:
+                    raise last_auth_exc
+                continue
+            return text
+
+        if last_auth_exc:
+            raise last_auth_exc
+        raise RuntimeError("crawler HTTP retry loop exited without result")

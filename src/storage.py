@@ -2762,6 +2762,101 @@ class DatabaseManager:
             )
         return items, total
 
+    def aggregate_ths_sector_stats_for_volume_batch(
+        self,
+        crawl_run_id: str,
+        batch_run_id: str,
+        *,
+        limit: int = 200,
+    ) -> Tuple[int, List[Dict[str, Any]]]:
+        """
+        将同花顺概念成分（某次爬取 run）与**成交量榜**分析批次 ``analysis_history`` 做关联，
+        按概念汇总：命中批次的成分股只数、平均评分/涨跌幅/参考成交量、最优榜单名次。
+
+        仅支持 ``batch_run_id`` 以 ``tv_`` 开头的成交量榜批次。
+        """
+        from src.services.market_scan_constants import BATCH_KIND_VOLUME as _BK_V
+
+        rid = (crawl_run_id or "").strip()
+        bid = (batch_run_id or "").strip()
+        if not rid or not bid:
+            return 0, []
+        if not bid.lower().startswith("tv_"):
+            return 0, []
+        if not self.ths_concept_run_exists(rid):
+            return 0, []
+
+        tv_p = AnalysisHistory.batch_run_id.like("tv_%")
+        vol_cond = or_(
+            AnalysisHistory.batch_kind == _BK_V,
+            and_(AnalysisHistory.batch_kind.is_(None), tv_p),
+        )
+        ah = AnalysisHistory
+        cst = CrawlerThsConceptConstituent
+        conc = CrawlerThsConcept
+        lim = max(1, min(int(limit or 200), 500))
+        hit_cnt = func.count(ah.id).label("hit_cnt")
+
+        with self.get_session() as session:
+            batch_total = int(
+                session.scalar(
+                    select(func.count(ah.id)).where(and_(ah.batch_run_id == bid, vol_cond))
+                )
+                or 0
+            )
+
+            stmt = (
+                select(
+                    conc.concept_code,
+                    conc.concept_name,
+                    hit_cnt,
+                    func.avg(ah.sentiment_score).label("avg_sentiment"),
+                    func.avg(ah.ref_change_pct).label("avg_change_pct"),
+                    func.min(ah.rank_in_batch).label("best_rank"),
+                    func.avg(ah.ref_trade_volume).label("avg_ref_vol"),
+                )
+                .select_from(ah)
+                .join(
+                    cst,
+                    and_(
+                        cst.run_id == rid,
+                        cst.stock_code == ah.code,
+                    ),
+                )
+                .join(
+                    conc,
+                    and_(
+                        conc.run_id == rid,
+                        conc.concept_code == cst.concept_code,
+                    ),
+                )
+                .where(and_(ah.batch_run_id == bid, vol_cond))
+                .group_by(conc.concept_code, conc.concept_name)
+                .order_by(desc(hit_cnt))
+                .limit(lim)
+            )
+            rows = session.execute(stmt).all()
+
+        items: List[Dict[str, Any]] = []
+        for row in rows:
+            m = row._mapping
+            avg_s = m.get("avg_sentiment")
+            avg_c = m.get("avg_change_pct")
+            avg_v = m.get("avg_ref_vol")
+            br = m.get("best_rank")
+            items.append(
+                {
+                    "concept_code": str(m.get("concept_code") or ""),
+                    "concept_name": m.get("concept_name"),
+                    "stocks_in_batch": int(m.get("hit_cnt") or 0),
+                    "avg_sentiment_score": float(avg_s) if avg_s is not None else None,
+                    "avg_change_pct": float(avg_c) if avg_c is not None else None,
+                    "best_rank_in_batch": int(br) if br is not None else None,
+                    "avg_ref_trade_volume": float(avg_v) if avg_v is not None else None,
+                }
+            )
+        return batch_total, items
+
     def save_conversation_message(self, session_id: str, role: str, content: str) -> None:
         """
         保存 Agent 对话消息

@@ -3,12 +3,14 @@
 
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 
 from src.crawler.config import load_crawler_config
+from src.crawler.errors import CrawlAuthError
 from src.crawler.http_client import (
+    CrawlHttpClient,
     _chrome_major_version,
     _sec_ch_ua_platform_quoted,
     _ths_bootstrap_nav_headers,
@@ -97,6 +99,71 @@ class CrawlerHttpCookieTestCase(unittest.TestCase):
         with patch.dict(os.environ, {"CRAWLER_HTTP_VERIFY_SSL": '"false"'}, clear=False):
             cfg = load_crawler_config()
         self.assertFalse(cfg.http_verify_ssl)
+
+    def test_ths_auth_max_retries_default(self) -> None:
+        cfg = load_crawler_config()
+        self.assertEqual(cfg.ths_auth_max_retries, 3)
+
+    def test_ajax_401_retries_with_linear_backoff_then_success(self) -> None:
+        import src.crawler.http_client as http_client_mod
+
+        req = httpx.Request("GET", "https://q.10jqka.com.cn/gn/ajax")
+        r401 = httpx.Response(401, request=req, text="denied")
+        ok_html = "<html><body><table class='m-pager-table'></table></body></html>"
+        r200 = httpx.Response(200, request=req, text=ok_html)
+
+        env = {
+            "CRAWLER_DELAY_MS": "0",
+            "CRAWLER_THS_AUTH_MAX_RETRIES": "2",
+            "CRAWLER_THS_AUTO_BOOTSTRAP": "false",
+            "CRAWLER_THS_HEXIN_V": "test-v-token",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            cfg = load_crawler_config()
+        client = CrawlHttpClient(cfg)
+        client._bootstrap_done = True
+        client._client.get = MagicMock(side_effect=[r401, r200])
+
+        with patch.object(http_client_mod.time, "sleep") as mock_sleep:
+            text = client.get(
+                "https://q.10jqka.com.cn/gn/ajax/1",
+                referer="https://q.10jqka.com.cn/gn/detail/code/308614/",
+                ajax=True,
+            )
+
+        self.assertIn("m-pager-table", text)
+        self.assertEqual(client._client.get.call_count, 2)
+        mock_sleep.assert_called_once_with(10)
+
+    def test_ajax_401_exhausts_retries_raises(self) -> None:
+        import src.crawler.http_client as http_client_mod
+
+        req = httpx.Request("GET", "https://q.10jqka.com.cn/gn/ajax")
+        r401 = httpx.Response(401, request=req, text="denied")
+
+        env = {
+            "CRAWLER_DELAY_MS": "0",
+            "CRAWLER_THS_AUTH_MAX_RETRIES": "1",
+            "CRAWLER_THS_AUTO_BOOTSTRAP": "false",
+            "CRAWLER_THS_HEXIN_V": "test-v-token",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            cfg = load_crawler_config()
+        client = CrawlHttpClient(cfg)
+        client._bootstrap_done = True
+        client._client.get = MagicMock(return_value=r401)
+
+        with patch.object(http_client_mod.time, "sleep") as mock_sleep:
+            with self.assertRaises(CrawlAuthError):
+                client.get(
+                    "https://q.10jqka.com.cn/gn/ajax/1",
+                    referer="https://q.10jqka.com.cn/gn/detail/code/308614/",
+                    ajax=True,
+                )
+
+        self.assertEqual(client._client.get.call_count, 2)
+        self.assertEqual(mock_sleep.call_count, 1)
+        mock_sleep.assert_called_with(10)
 
 
 if __name__ == "__main__":

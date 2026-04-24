@@ -4,6 +4,7 @@ import type {
   ThsConceptListResponse,
   ThsConceptRunListResponse,
   ThsConstituentListResponse,
+  ThsVolumeBatchSectorStatsResponse,
 } from '../types/crawlerThs';
 
 const BASE = '/api/v1/crawler/ths-concept';
@@ -51,5 +52,18 @@ export const crawlerThsApi = {
       { params: p }
     );
     return toCamelCase<ThsConstituentListResponse>(res.data);
+  },
+
+  volumeBatchSectorStats: async (params: {
+    runId: string;
+    batchRunId: string;
+    limit?: number;
+  }): Promise<ThsVolumeBatchSectorStatsResponse> => {
+    const { runId, batchRunId, limit = 200 } = params;
+    const res = await apiClient.get<Record<string, unknown>>(
+      `${BASE}/runs/${encodeURIComponent(runId)}/volume-batch-sector-stats`,
+      { params: { batch_run_id: batchRunId, limit } }
+    );
+    return toCamelCase<ThsVolumeBatchSectorStatsResponse>(res.data);
   },
 };

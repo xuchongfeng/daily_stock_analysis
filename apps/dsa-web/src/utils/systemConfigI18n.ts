@@ -21,7 +21,7 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
   system: '管理调度、日志、端口等系统级参数。',
   agent: '管理 Agent 模式、策略与多 Agent 编排配置。',
   market_scan: '管理涨幅榜与成交量榜批量扫描参数（TOP_MOVERS_*）。',
-  crawler: '管理同花顺概念爬虫（THS）与 Cookie、预取、输出等参数（对应 CLI --crawl ths-concept）。',
+  crawler: '管理同花顺概念爬虫（THS）与 Cookie、预取、输出等参数（对应 CLI --crawl ths-concept）；Web「数据爬取」页可查看落库与板块×量榜分析。',
   backtest: '管理回测开关、评估窗口和引擎参数。',
   uncategorized: '其他未归类的配置项。',
 };
@@ -92,6 +92,7 @@ const fieldTitleMap: Record<string, string> = {
   CRAWLER_USER_AGENT: '爬虫 User-Agent',
   CRAWLER_THS_CATALOG_URL: '概念目录页 URL',
   CRAWLER_DELAY_MS: '请求间隔（毫秒）',
+  CRAWLER_THS_AUTH_MAX_RETRIES: '成分接口 401/403 额外重试次数',
   CRAWLER_THS_PREFLIGHT_DETAIL: '拉成分前先打开概念详情页',
   CRAWLER_OUTPUT_DIR: '爬虫输出根目录',
   CRAWLER_THS_PERSIST_DB: '爬取结果写入 SQLite',
@@ -170,6 +171,8 @@ const fieldDescriptionMap: Record<string, string> = {
   CRAWLER_USER_AGENT: '留空时 CLI 使用内置桌面 Chrome UA；此处保存后写入 .env。',
   CRAWLER_THS_CATALOG_URL: '概念板块目录 HTML 地址，默认漂亮100聚合页。',
   CRAWLER_DELAY_MS: '两次 HTTP 请求之间的休眠毫秒数，降低风控与 403 概率。',
+  CRAWLER_THS_AUTH_MAX_RETRIES:
+    '成分 AJAX 返回 HTTP 401/403 或反爬 chameleon 页时，在首次请求之外最多再试几次；每次重试前额外等待 10s、20s…（另加请求间隔）。0 表示不重试。',
   CRAWLER_THS_PREFLIGHT_DETAIL: '每个概念在请求成分 AJAX 前先 GET 一次详情页，减少 WAF 403。',
   CRAWLER_OUTPUT_DIR: 'jsonl/manifest 输出根目录，如 data/crawler。',
   CRAWLER_THS_PERSIST_DB: '是否写入应用 SQLite（crawler_ths_* 表）；关闭则仅写磁盘 jsonl。',

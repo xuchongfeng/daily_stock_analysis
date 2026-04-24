@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] 同花顺概念爬虫：成分 AJAX 遇 HTTP 401/403 或 chameleon 反爬页时，按 `CRAWLER_THS_AUTH_MAX_RETRIES`（默认 3，0 关闭）退避重试，每次重试前额外休眠 10s×失败序号；`docs/crawler.md` 补充入库与重试说明；`config_registry` / Web 系统设置文案同步。
+- [改进] Web「板块与成交量」`/sector-volume-analysis`：改为仅展示板块列表与选中板块成分股（默认最新入库、可切换数据时间），不再展示爬取运行表与成交量榜批次统计；文档 `docs/crawler.md` 与「数据爬取」页说明同步。
+- [改进] Web：「板块与成交量分析」独立为侧栏一级入口，路由 `/sector-volume-analysis`；「数据爬取」`/data-crawl` 仅保留同花顺概念数据；`/data-crawl?tab=sector-volume` 重定向至 `/sector-volume-analysis`；文档 `docs/crawler.md` 同步。
+- [新功能] Web「数据爬取」`/data-crawl`：原「概念爬取」并入为「同花顺概念数据」子页，新增「板块与成交量分析」（同花顺板块成分 ∩ 某日成交量榜 `tv_*` 批次，按板块汇总命中数/均分/涨跌/名次等）；`GET /api/v1/crawler/ths-concept/runs/{run_id}/volume-batch-sector-stats`；`DatabaseManager.aggregate_ths_sector_stats_for_volume_batch`；侧栏与文档 `docs/crawler.md` 同步；`/ths-concept-crawl` 重定向至 `/data-crawl`。
 - [新功能] Web「概念爬取」页（`/ths-concept-crawl`）与同花顺概念爬虫 SQLite 只读 API（`/api/v1/crawler/ths-concept/runs` 及子资源），用于查看运行/概念/成分进度；`DatabaseManager` 增加列表查询方法。
 - [改进] 爬虫：未设置 `CRAWLER_DELAY_MS` 时默认 **2000 ms**（2 秒/次），降低同花顺 WAF 触发率。
 - [改进] 爬虫：`CRAWLER_HTTP_VERIFY_SSL` 等布尔环境值支持去掉一层首尾引号。

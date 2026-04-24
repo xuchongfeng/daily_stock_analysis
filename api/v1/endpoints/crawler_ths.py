@@ -16,6 +16,8 @@ from api.v1.schemas.crawler_ths import (
     ThsConceptRunListResponse,
     ThsConstituentItem,
     ThsConstituentListResponse,
+    ThsVolumeBatchSectorStatItem,
+    ThsVolumeBatchSectorStatsResponse,
 )
 from src.storage import DatabaseManager
 
@@ -118,4 +120,49 @@ def list_ths_constituents(
         raise
     except Exception as exc:
         logger.exception("list_ths_constituents failed run_id=%s", rid)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get(
+    "/runs/{run_id}/volume-batch-sector-stats",
+    response_model=ThsVolumeBatchSectorStatsResponse,
+    responses={
+        400: {"description": "参数错误", "model": ErrorResponse},
+        404: {"description": "运行不存在", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="同花顺板块 × 成交量榜批次：板块维度表现汇总",
+)
+def ths_volume_batch_sector_stats(
+    run_id: str,
+    batch_run_id: str = Query(..., description="成交量榜批次号 tv_YYYYMMDD_*"),
+    limit: int = Query(200, ge=1, le=500, description="返回板块条数上限（按命中数降序）"),
+    db: DatabaseManager = Depends(get_database_manager),
+) -> ThsVolumeBatchSectorStatsResponse:
+    rid = (run_id or "").strip()
+    bid = (batch_run_id or "").strip()
+    if not bid:
+        raise HTTPException(status_code=400, detail="batch_run_id_required")
+    if not bid.lower().startswith("tv_"):
+        raise HTTPException(
+            status_code=400,
+            detail="batch_run_id_must_be_volume_tv_prefix",
+        )
+    if not db.ths_concept_run_exists(rid):
+        raise HTTPException(status_code=404, detail="run_not_found")
+    try:
+        batch_total, rows = db.aggregate_ths_sector_stats_for_volume_batch(
+            rid, bid, limit=limit
+        )
+        items = [ThsVolumeBatchSectorStatItem(**r) for r in rows]
+        return ThsVolumeBatchSectorStatsResponse(
+            run_id=rid,
+            batch_run_id=bid,
+            batch_stock_count=batch_total,
+            items=items,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("ths_volume_batch_sector_stats failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc

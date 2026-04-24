@@ -7,6 +7,7 @@ import unittest
 
 from src.config import Config
 from src.storage import (
+    AnalysisHistory,
     CrawlerThsConcept,
     CrawlerThsConceptConstituent,
     CrawlerThsConceptRun,
@@ -149,6 +150,88 @@ class CrawlerThsDbTestCase(unittest.TestCase):
         )
         self.assertEqual(nt2, 1)
         self.assertEqual(len(cons_f), 1)
+
+    def test_aggregate_ths_sector_stats_for_volume_batch(self) -> None:
+        self.db.save_ths_concept_crawl(
+            run_id="runvol1",
+            task_id="ths-concept",
+            catalog_url="https://q.10jqka.com.cn/gn/detail/code/308718/",
+            dry_run=False,
+            ok=True,
+            message="完成",
+            stats={},
+            errors=[],
+            output_path="/tmp/runvol1",
+            concepts=[
+                {
+                    "concept_code": "308614",
+                    "concept_name": "量榜板块测试",
+                    "detail_url": "http://q.10jqka.com.cn/gn/detail/code/308614/",
+                    "crawled_at": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+            constituents=[
+                {
+                    "concept_code": "308614",
+                    "stock_code": "600519",
+                    "stock_name": "贵州茅台",
+                    "page": 1,
+                    "row_index": 0,
+                    "crawled_at": "2026-01-01T00:00:00+00:00",
+                }
+            ],
+        )
+        bid = "tv_20260410_a1b2c3d4"
+        with self.db.get_session() as session:
+            session.add(
+                AnalysisHistory(
+                    query_id="qv1",
+                    code="600519",
+                    name="贵州茅台",
+                    report_type="simple",
+                    sentiment_score=72,
+                    operation_advice="持有",
+                    trend_prediction="—",
+                    analysis_summary="s",
+                    raw_result="{}",
+                    batch_kind="top_volume_daily",
+                    batch_run_id=bid,
+                    rank_in_batch=15,
+                    ref_change_pct=1.2,
+                    ref_trade_volume=500.0,
+                )
+            )
+            session.add(
+                AnalysisHistory(
+                    query_id="qv2",
+                    code="000001",
+                    name="平安",
+                    report_type="simple",
+                    sentiment_score=60,
+                    operation_advice="观望",
+                    trend_prediction="—",
+                    analysis_summary="s",
+                    raw_result="{}",
+                    batch_kind="top_volume_daily",
+                    batch_run_id=bid,
+                    rank_in_batch=200,
+                    ref_change_pct=-0.5,
+                    ref_trade_volume=100.0,
+                )
+            )
+            session.commit()
+
+        batch_total, items = self.db.aggregate_ths_sector_stats_for_volume_batch("runvol1", bid)
+        self.assertEqual(batch_total, 2)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["concept_code"], "308614")
+        self.assertEqual(items[0]["stocks_in_batch"], 1)
+        self.assertEqual(items[0]["avg_sentiment_score"], 72.0)
+        self.assertEqual(items[0]["best_rank_in_batch"], 15)
+
+        empty, no_items = self.db.aggregate_ths_sector_stats_for_volume_batch("runvol1", "tm_20260410_a1b2c3d4")
+        self.assertEqual(empty, 0)
+        self.assertEqual(no_items, [])
 
 
 if __name__ == "__main__":

@@ -28,15 +28,17 @@
 
 在 Web **系统设置** 中新增 **「网页爬虫」** 分类，可编辑 `CRAWLER_THS_COOKIE`（完整 Cookie 多行文本）、`CRAWLER_THS_HEXIN_V` 及预取、输出、超时等项；保存后写入 `.env`，CLI 爬虫需重启或等待配置重载后生效。
 
-### Web「概念爬取」进度页
+### Web「数据爬取」与「板块与成交量」页
 
-侧栏 **「概念爬取」**（路由 `/ths-concept-crawl`）只读展示已写入 SQLite 的 **`crawler_ths_concept_run` / `crawler_ths_concept` / `crawler_ths_concept_constituent`**：按运行记录查看概念列表与成分股（支持分页、概念关键词筛选、按概念筛选成分）。需 **`CRAWLER_THS_PERSIST_DB=true`** 且已执行过至少一次 `python main.py --crawl ths-concept`（或等价任务）落库。
+- **数据爬取**：侧栏 **「数据爬取」**，路由 **`/data-crawl`**（旧路由 `/ths-concept-crawl` 会重定向到本页）。页面为 **同花顺概念数据** 只读视图：已写入 SQLite 的 **`crawler_ths_concept_run` / `crawler_ths_concept` / `crawler_ths_concept_constituent`**（运行记录、概念列表、成分股；支持分页与筛选）。需 **`CRAWLER_THS_PERSIST_DB=true`** 且已执行过至少一次 `python main.py --crawl ths-concept`。
+- **板块与成交量**（侧栏一级菜单，路由 **`/sector-volume-analysis`**）：仅展示同花顺 **板块（概念）列表** 与 **选中板块的成分股**；默认使用库中最新入库快照，有多条入库记录时可切换「数据时间」。**不**展示爬取运行明细、**不**与成交量榜批次关联。历史书签 **`/data-crawl?tab=sector-volume`** 会在前端 **重定向** 到 **`/sector-volume-analysis`**（`Navigate replace`）。
 
 只读 REST（需已启动带 Web 的 API，与站点认证策略一致）：
 
 - `GET /api/v1/crawler/ths-concept/runs?page=&limit=`
 - `GET /api/v1/crawler/ths-concept/runs/{run_id}/concepts?page=&limit=&q=`
 - `GET /api/v1/crawler/ths-concept/runs/{run_id}/constituents?page=&limit=&concept_code=`
+- `GET /api/v1/crawler/ths-concept/runs/{run_id}/volume-batch-sector-stats?batch_run_id=tv_...&limit=` — 可选：同花顺板块成分与某日成交量榜 `tv_*` 批次交集统计（`batch_run_id` 必填）；当前 Web「板块与成交量」页不使用。
 
 ### 环境变量（参见根目录 `.env.example`）
 
@@ -50,6 +52,7 @@
 | `CRAWLER_THS_FIELD` / `CRAWLER_THS_ORDER` | AJAX 路径参数，默认 `199112` / `desc` |
 | `CRAWLER_OUTPUT_DIR` | 输出根目录，默认 `./data/crawler` |
 | `CRAWLER_DELAY_MS` | 两次请求之间休眠毫秒数；**未设置时默认 2000**（2 秒/次），仍被拦截可调大 |
+| `CRAWLER_THS_AUTH_MAX_RETRIES` | 成分 AJAX 返回 **HTTP 401/403** 或 **chameleon 反爬页** 时，在首次请求之外最多再试几次（默认 **3**）；每次重试前**额外**休眠 **10s × 已失败次数**（第 1 次重试前 10s，第 2 次前 20s，依此类推），**另加**上面的 `CRAWLER_DELAY_MS`。设为 **0** 关闭重试。 |
 | `CRAWLER_THS_MAX_PAGES` | 每个概念最多翻页数（可选） |
 | `CRAWLER_THS_MAX_CONCEPTS` | 最多处理多少个概念（可选） |
 | `CRAWLER_THS_PREFLIGHT_DETAIL` | 默认 `true`：每个概念在拉成分 AJAX 前先 `GET` 一次该概念详情页，降低 WAF 403 |
@@ -89,7 +92,11 @@ SELECT * FROM crawler_ths_concept_constituent WHERE run_id = 'YOUR_RUN_ID' AND s
 - 成分 AJAX 使用与浏览器 **顶层文档导航** 一致的 **`Sec-Fetch-*` / `Accept` / `Accept-Language`**（见 `http_client._ths_constituent_ajax_nav_headers`），**不**发送 `Origin`、`X-Requested-With`；
 - 每个概念拉成分前 **`CRAWLER_THS_PREFLIGHT_DETAIL`**（默认 true）可先打开详情页以建立会话。
 
-若仍 401/403：继续 **增大 `CRAWLER_DELAY_MS`**（如 3000～5000），或在浏览器登录后复制 **`CRAWLER_THS_COOKIE` / `CRAWLER_THS_HEXIN_V`**。
+若仍 401/403：继续 **增大 `CRAWLER_DELAY_MS`**（如 3000～5000），或在浏览器登录后复制 **`CRAWLER_THS_COOKIE` / `CRAWLER_THS_HEXIN_V`**。亦可依赖 **`CRAWLER_THS_AUTH_MAX_RETRIES`** 对单次成分请求做**有限次**退避重试（仅缓解偶发拦截，不能替代有效 Cookie）。
+
+### 成分数据与 SQLite
+
+正常完成非 dry-run 任务且 **`CRAWLER_THS_PERSIST_DB=true`** 时，`run_ths_concept_crawl` 在解析各页 `m-pager-table` 后累积 `all_rows`，最终调用 `DatabaseManager.save_ths_concept_crawl(..., constituents=list(all_rows))`：先按 `run_id` 删除旧行再插入 **`crawler_ths_concept`** 与 **`crawler_ths_concept_constituent`**（成分字段含 `concept_code`、`stock_code`、`stock_name`、`page`、`row_index`）。某一概念在某一页遇 **不可恢复** 的 `CrawlAuthError`（重试仍失败）时，该概念后续页不再抓取，**已解析行的成分仍会写入**；未抓取到的板块不会有对应成分行。
 
 ### CLI
 
