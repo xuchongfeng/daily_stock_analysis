@@ -3,6 +3,7 @@ import { Badge } from '../common';
 import { AddToWatchlistButton } from '../watchlist/AddToWatchlistButton';
 import type { HistoryItem } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
+import { scoreBadgeVariant } from '../../utils/signalBadge';
 import { formatDateTime } from '../../utils/format';
 import { truncateStockName, isStockNameTruncated } from '../../utils/stockName';
 
@@ -89,14 +90,9 @@ export const HistoryListItem: React.FC<HistoryListItemProps> = ({
               </div>
               {sentimentColor && (
                 <Badge
-                  variant="default"
+                  variant={scoreBadgeVariant(item.sentimentScore)}
                   size="sm"
-                  className={`home-history-sentiment-badge shrink-0 shadow-none text-[11px] font-semibold leading-none transition-opacity duration-200${isTruncated ? ' group-hover/item:opacity-80' : ''}`}
-                  style={{
-                    color: sentimentColor,
-                    borderColor: `${sentimentColor}30`,
-                    backgroundColor: `${sentimentColor}10`,
-                  }}
+                  className={`home-history-sentiment-badge shrink-0 shadow-none text-[11px] font-semibold leading-none transition-opacity duration-200 ${isTruncated ? ' group-hover/item:opacity-80' : ''}`}
                 >
                   {getOperationBadgeLabel(item.operationAdvice)} {item.sentimentScore}
                 </Badge>

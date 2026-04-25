@@ -7,11 +7,13 @@ import { getParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
 import {
   ApiErrorAlert,
+  AdviceBadge,
   Badge,
   Button,
   Card,
   EmptyState,
   Pagination,
+  ScoreBadge,
   Select,
 } from '../components/common';
 import { ReportMarkdown } from '../components/report/ReportMarkdown';
@@ -67,7 +69,6 @@ function marketScanNameCell(code: string, name?: string | null) {
 }
 
 type MarketScannerMainTab = 'batches' | 'rating';
-
 const MarketScannerPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const mainTab: MarketScannerMainTab =
@@ -533,8 +534,12 @@ const MarketScannerPage: React.FC = () => {
                             '—'
                           )}
                         </td>
-                        <td className="px-3 py-2">{row.sentimentScore ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs">{row.operationAdvice ?? '—'}</td>
+                        <td className="px-3 py-2">
+                          <ScoreBadge score={row.sentimentScore} />
+                        </td>
+                        <td className="px-3 py-2 text-xs">
+                          <AdviceBadge advice={row.operationAdvice} />
+                        </td>
                         <td className="px-2 py-2 text-center align-middle">
                           <AddToWatchlistButton stockCode={row.stockCode} stockName={row.stockName} compact />
                         </td>

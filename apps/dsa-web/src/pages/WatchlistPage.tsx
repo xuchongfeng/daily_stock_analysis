@@ -7,16 +7,16 @@ import { historyApi } from '../api/history';
 import { getParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
 import {
+  AdviceBadge,
   ApiErrorAlert,
-  Badge,
   Button,
   Card,
   EmptyState,
   InlineAlert,
+  ScoreBadge,
   Tooltip,
 } from '../components/common';
 import type { HistoryItem } from '../types/analysis';
-import { getSentimentColor } from '../types/analysis';
 import { useWatchlistStore } from '../stores/watchlistStore';
 
 const BATCH_SIZE = 50;
@@ -201,8 +201,6 @@ const WatchlistPage: React.FC = () => {
                   const latest = latestByCode[c];
                   const score = latest?.sentimentScore;
                   const advice = latest?.operationAdvice;
-                  const scoreColor =
-                    score !== undefined && score !== null ? getSentimentColor(Number(score)) : null;
                   const nameCell = labels[c]?.trim() || latest?.stockName?.trim() || '—';
                   return (
                     <tr key={c} className="border-t border-border/40">
@@ -211,29 +209,14 @@ const WatchlistPage: React.FC = () => {
                         {nameCell}
                       </td>
                       <td className="py-2 pr-3 tabular-nums">
-                        {score !== undefined && score !== null ? (
-                          <Badge
-                            variant="default"
-                            size="sm"
-                            className="font-semibold tabular-nums"
-                            style={{
-                              color: scoreColor || undefined,
-                              borderColor: scoreColor ? `${scoreColor}40` : undefined,
-                              backgroundColor: scoreColor ? `${scoreColor}14` : undefined,
-                            }}
-                          >
-                            {score}
-                          </Badge>
-                        ) : (
-                          <span className="text-secondary-text">—</span>
-                        )}
+                        <ScoreBadge score={score} />
                       </td>
                       <td className="max-w-[14rem] py-2 pr-3 text-xs text-foreground">
                         {advice?.trim() ? (
                           <Tooltip content={advice.trim()} focusable>
-                            <span className="block cursor-default truncate font-medium">
-                              {operationAdviceShortLabel(advice)}
-                            </span>
+                            <div className="max-w-[12rem] truncate">
+                              <AdviceBadge advice={operationAdviceShortLabel(advice)} />
+                            </div>
                           </Tooltip>
                         ) : (
                           <span className="text-secondary-text">暂无分析</span>

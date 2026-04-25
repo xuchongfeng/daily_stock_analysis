@@ -7,12 +7,14 @@ import { signalDigestApi } from '../api/signalDigest';
 import { getParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
 import {
+  AdviceBadge,
   ApiErrorAlert,
   Badge,
   Button,
   Card,
   EmptyState,
   InlineAlert,
+  ScoreBadge,
 } from '../components/common';
 import type { SignalDigestResponse } from '../types/signalDigest';
 import { xueqiuStockHref } from '../utils/xueqiu';
@@ -251,9 +253,11 @@ const SignalDigestPage: React.FC = () => {
                       <td className="px-4 py-2 tabular-nums text-foreground">{p.score.toFixed(1)}</td>
                       <td className="px-4 py-2 tabular-nums text-secondary-text">{p.appearanceCount}</td>
                       <td className="px-4 py-2 tabular-nums text-secondary-text">
-                        {p.sentimentScore ?? '—'}
+                        <ScoreBadge score={p.sentimentScore} />
                       </td>
-                      <td className="px-4 py-2 text-secondary-text">{p.operationAdvice ?? '—'}</td>
+                      <td className="px-4 py-2 text-secondary-text">
+                        <AdviceBadge advice={p.operationAdvice} />
+                      </td>
                       <td className="px-4 py-2 text-secondary-text">{p.trendPrediction ?? '—'}</td>
                       <td className="px-2 py-2 text-center align-middle">
                         <AddToWatchlistButton stockCode={p.code} stockName={p.name} compact />

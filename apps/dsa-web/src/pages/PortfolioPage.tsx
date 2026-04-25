@@ -6,7 +6,7 @@ import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
 import { pollAnalysisTask } from '../utils/analysisTaskPoll';
-import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert } from '../components/common';
+import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert, ScoreBadge, AdviceBadge } from '../components/common';
 import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 import { toDateInputValue } from '../utils/format';
 import type {
@@ -1284,10 +1284,10 @@ const PortfolioPage: React.FC = () => {
                     <td className="py-2 pr-2 font-mono text-foreground">{row.symbol}</td>
                     <td className="py-2 pr-2 text-secondary">{row.stockName ?? '—'}</td>
                     <td className="py-2 pr-2 text-right">
-                      {row.status === 'completed' && row.sentimentScore != null ? row.sentimentScore : '—'}
+                      {row.status === 'completed' ? <ScoreBadge score={row.sentimentScore} /> : '—'}
                     </td>
                     <td className="py-2 pr-2 text-xs text-foreground">
-                      {row.status === 'completed' && row.operationAdvice ? row.operationAdvice : '—'}
+                      {row.status === 'completed' ? <AdviceBadge advice={row.operationAdvice} /> : '—'}
                     </td>
                     <td className="py-2 pr-2 text-xs text-secondary max-w-[min(28rem,40vw)]">
                       {row.status === 'completed' && row.analysisSummary ? (
