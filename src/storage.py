@@ -289,6 +289,45 @@ class AnalysisHistory(Base):
         }
 
 
+class ConceptBoard(Base):
+    """概念板块主表（来自外部行业/概念聚合文件）。"""
+
+    __tablename__ = "concept_boards"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    board_code = Column(String(32), nullable=False, unique=True, index=True)
+    board_name = Column(String(128), nullable=False, index=True)
+    stocks_count = Column(Integer, nullable=False, default=0)
+    source_path = Column(String(512))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        Index("ix_concept_board_name_code", "board_name", "board_code"),
+    )
+
+
+class ConceptBoardStock(Base):
+    """概念板块-股票关联表。"""
+
+    __tablename__ = "concept_board_stocks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    board_id = Column(Integer, ForeignKey("concept_boards.id"), nullable=False, index=True)
+    stock_code = Column(String(16), nullable=False, index=True)
+    stock_name = Column(String(64))
+    tag_industry = Column(Text)  # JSON 字符串（数组）
+    tag_concept = Column(Text)  # JSON 字符串（数组）
+    raw_payload = Column(Text)  # 预留：保留部分原始字段，便于后续扩展
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("board_id", "stock_code", name="uix_concept_board_stock"),
+        Index("ix_concept_stock_board", "stock_code", "board_id"),
+    )
+
+
 class SignalDigestCache(Base):
     """
     信号摘要 API 响应缓存（SQLite）。
@@ -1467,6 +1506,231 @@ class DatabaseManager:
             f"signal_digest_cache[{cache_key[:12]}]",
             _write,
         )
+
+    def replace_concept_boards(
+        self,
+        *,
+        boards: List[Dict[str, Any]],
+        source_path: Optional[str] = None,
+    ) -> Dict[str, int]:
+        """
+        全量重建概念板块与板块股票关联（导入脚本使用）。
+
+        Args:
+            boards: [
+                {
+                    "board_code": str,
+                    "board_name": str,
+                    "stocks_count": int,
+                    "stocks": [
+                        {"stock_code","stock_name","tag_industry","tag_concept","raw_payload"},
+                        ...
+                    ],
+                },
+                ...
+            ]
+            source_path: 导入源文件路径（用于追溯）。
+        """
+        normalized: List[Dict[str, Any]] = []
+        for item in boards or []:
+            board_code = str(item.get("board_code") or "").strip()
+            board_name = str(item.get("board_name") or "").strip()
+            if not board_code or not board_name:
+                continue
+            stocks = item.get("stocks") if isinstance(item.get("stocks"), list) else []
+            normalized.append(
+                {
+                    "board_code": board_code,
+                    "board_name": board_name,
+                    "stocks_count": int(item.get("stocks_count") or len(stocks) or 0),
+                    "stocks": stocks,
+                }
+            )
+
+        now = datetime.now()
+
+        def _write(session: Session) -> Dict[str, int]:
+            session.execute(delete(ConceptBoardStock))
+            session.execute(delete(ConceptBoard))
+            board_rows = 0
+            stock_rows = 0
+            for b in normalized:
+                board = ConceptBoard(
+                    board_code=b["board_code"],
+                    board_name=b["board_name"],
+                    stocks_count=b["stocks_count"],
+                    source_path=source_path,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(board)
+                session.flush()
+                board_rows += 1
+                for s in b["stocks"]:
+                    stock_code = str(s.get("stock_code") or "").strip()
+                    if not stock_code:
+                        continue
+                    tag_industry = s.get("tag_industry")
+                    tag_concept = s.get("tag_concept")
+                    session.add(
+                        ConceptBoardStock(
+                            board_id=board.id,
+                            stock_code=stock_code,
+                            stock_name=str(s.get("stock_name") or "").strip() or None,
+                            tag_industry=json.dumps(tag_industry, ensure_ascii=False)
+                            if isinstance(tag_industry, list)
+                            else None,
+                            tag_concept=json.dumps(tag_concept, ensure_ascii=False)
+                            if isinstance(tag_concept, list)
+                            else None,
+                            raw_payload=json.dumps(s.get("raw_payload"), ensure_ascii=False)
+                            if isinstance(s.get("raw_payload"), dict)
+                            else None,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+                    stock_rows += 1
+            return {"boards": board_rows, "stocks": stock_rows}
+
+        return self._run_write_transaction("replace_concept_boards", _write)
+
+    def list_concept_boards(self, *, limit: int = 200) -> List[Dict[str, Any]]:
+        limit = max(1, min(int(limit or 200), 1000))
+        with self.get_session() as session:
+            rows = session.execute(
+                select(ConceptBoard)
+                .order_by(desc(ConceptBoard.stocks_count), asc(ConceptBoard.board_name))
+                .limit(limit)
+            ).scalars().all()
+            return [
+                {
+                    "board_code": r.board_code,
+                    "board_name": r.board_name,
+                    "stocks_count": int(r.stocks_count or 0),
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                }
+                for r in rows
+            ]
+
+    def get_concept_board_stocks_with_latest_score(
+        self,
+        *,
+        board_code: str,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        board_code = str(board_code or "").strip()
+        limit = max(1, min(int(limit or 500), 2000))
+        offset = max(0, int(offset or 0))
+        if not board_code:
+            return {"board": None, "items": [], "total": 0}
+
+        with self.get_session() as session:
+            board = session.execute(
+                select(ConceptBoard).where(ConceptBoard.board_code == board_code)
+            ).scalar_one_or_none()
+            if board is None:
+                return {"board": None, "items": [], "total": 0}
+
+            latest_subq = (
+                select(
+                    AnalysisHistory.code.label("code"),
+                    func.max(AnalysisHistory.id).label("max_id"),
+                )
+                .group_by(AnalysisHistory.code)
+                .subquery()
+            )
+            total = session.execute(
+                select(func.count(ConceptBoardStock.id)).where(
+                    ConceptBoardStock.board_id == board.id
+                )
+            ).scalar() or 0
+
+            stmt = (
+                select(
+                    ConceptBoardStock.stock_code,
+                    ConceptBoardStock.stock_name,
+                    ConceptBoardStock.tag_industry,
+                    ConceptBoardStock.tag_concept,
+                    AnalysisHistory.sentiment_score,
+                    AnalysisHistory.operation_advice,
+                    AnalysisHistory.created_at,
+                )
+                .where(ConceptBoardStock.board_id == board.id)
+                .outerjoin(
+                    latest_subq,
+                    latest_subq.c.code == ConceptBoardStock.stock_code,
+                )
+                .outerjoin(
+                    AnalysisHistory,
+                    AnalysisHistory.id == latest_subq.c.max_id,
+                )
+                .order_by(
+                    asc(case((AnalysisHistory.sentiment_score.is_(None), 1), else_=0)),
+                    desc(AnalysisHistory.sentiment_score),
+                    asc(ConceptBoardStock.stock_code),
+                )
+                .offset(offset)
+                .limit(limit)
+            )
+            rows = session.execute(stmt).all()
+
+            items: List[Dict[str, Any]] = []
+            for row in rows:
+                try:
+                    tag_industry = json.loads(row.tag_industry) if row.tag_industry else []
+                except (json.JSONDecodeError, TypeError):
+                    tag_industry = []
+                try:
+                    tag_concept = json.loads(row.tag_concept) if row.tag_concept else []
+                except (json.JSONDecodeError, TypeError):
+                    tag_concept = []
+                items.append(
+                    {
+                        "stock_code": row.stock_code,
+                        "stock_name": row.stock_name,
+                        "sentiment_score": row.sentiment_score,
+                        "operation_advice": row.operation_advice,
+                        "latest_scored_at": row.created_at.isoformat() if row.created_at else None,
+                        "tag_industry": tag_industry if isinstance(tag_industry, list) else [],
+                        "tag_concept": tag_concept if isinstance(tag_concept, list) else [],
+                    }
+                )
+            return {
+                "board": {
+                    "board_code": board.board_code,
+                    "board_name": board.board_name,
+                    "stocks_count": int(board.stocks_count or 0),
+                    "updated_at": board.updated_at.isoformat() if board.updated_at else None,
+                },
+                "items": items,
+                "total": int(total),
+            }
+
+    def get_concept_board_highlights_by_codes(
+        self,
+        stock_codes: List[str],
+        *,
+        limit: int = 32,
+    ) -> List[Dict[str, Any]]:
+        codes = sorted({str(c or "").strip() for c in stock_codes if str(c or "").strip()})
+        if not codes:
+            return []
+        limit = max(1, min(int(limit or 32), 128))
+        with self.get_session() as session:
+            rows = session.execute(
+                select(
+                    ConceptBoard.board_name,
+                    func.count(ConceptBoardStock.id).label("cnt"),
+                )
+                .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
+                .where(ConceptBoardStock.stock_code.in_(codes))
+                .group_by(ConceptBoard.board_name)
+                .order_by(desc(func.count(ConceptBoardStock.id)), asc(ConceptBoard.board_name))
+                .limit(limit)
+            ).all()
+            return [{"name": str(n), "count": int(c or 0)} for n, c in rows if n]
 
     def get_analysis_history_paginated(
         self,

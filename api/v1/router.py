@@ -23,6 +23,7 @@ from api.v1.endpoints import (
     portfolio,
     market_scan,
     signal_digest,
+    concept_board,
     watchlist,
 )
 
@@ -98,6 +99,12 @@ router.include_router(
     signal_digest.router,
     prefix="/insights/signal-digest",
     tags=["Insights"],
+)
+
+router.include_router(
+    concept_board.router,
+    prefix="/concept-boards",
+    tags=["ConceptBoards"],
 )
 
 router.include_router(

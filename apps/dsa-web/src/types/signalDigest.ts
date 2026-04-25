@@ -39,6 +39,10 @@ export type SignalDigestResponse = {
   window: SignalDigestWindow;
   picks: SignalDigestPick[];
   boardHighlights: SignalDigestBoardHighlight[];
+  /** 窗口内全部符合条件标的的板块共现（不限于 Top-K）；旧缓存可能缺省，前端用 ?? [] */
+  boardHighlightsAll?: SignalDigestBoardHighlight[];
+  conceptHighlights?: SignalDigestBoardHighlight[];
+  conceptHighlightsAll?: SignalDigestBoardHighlight[];
   narrativeMarkdown?: string | null;
   narrativeGenerated: boolean;
   fromCache?: boolean;

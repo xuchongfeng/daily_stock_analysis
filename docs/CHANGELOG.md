@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] Web「信号摘要」页布局与视觉：主内容区改为纵向四行（个股 / 板块 / 概念 / AI 叙事）全宽流式；页头/筛选/窗口指标条；板块与概念行内为「全量 | Top」两卡并排（md 起）；表格斑马纹与悬停、空状态区分板块与概念。
+- [新功能] 新增概念板块数据链路：`scripts/init_concept_boards.py <json_path>` 可从外部 JSON 初始化 `concept_boards` / `concept_board_stocks`；保留个股 `tag_industry` 与 `tag_concept` 标签。
+- [新功能] 新增概念板块 API：`GET /api/v1/concept-boards`、`GET /api/v1/concept-boards/{board_code}/stocks`；板块个股按最近一次 AI 评分排序，未评分排末尾。
+- [改进] Web 新增「概念板块」页面（`/concept-boards`）与侧边栏入口，支持查看板块列表、板块个股、最近评分及行业/概念标签。
+- [改进] 信号摘要新增概念维度聚合：响应增加 `concept_highlights` / `concept_highlights_all`，页面展示 Top 与全量两组概念共现并纳入 AI 叙事输入。
+- [修复] `extract_fundamental_context`：除 `enhanced_context.fundamental_context` 外，兼容 Agent 等路径写入的根级 `fundamental_context`，信号摘要/板块共现可正确读取 `belong_boards`。
+- [改进] 信号摘要：API 增加 `board_highlights_all`（窗口内全部符合条件标的的板块共现，与原有 Top-K 的 `board_highlights` 并存）；Web 同时展示「全量板块」与「Top 标的板块」；个股分析摘要改为悬停约 1.5 秒后弹出，移除表格下方独立「摘要摘录」列表。
 - [新功能] Web「榜单扫描」增加「评分历史」子页：`GET /api/v1/market-scanner/stats/volume-rating-threshold-daily`（成交量榜按日统计评分不低于阈值的去重股票数）、`GET /api/v1/market-scanner/stocks/{code}/volume-rating-series`（单股按交易日成交量榜 AI 评分曲线）；文档见 `docs/market-scanner.md`。
 - [改进] 「评分历史」个股评分曲线：接口返回每条 `id`（分析历史主键）；「查看报告」改为点击折线圆点选中后在图下固定操作条打开（避免 Tooltip 随鼠标移动无法点中按钮）。
 - [改进] 「评分历史」日期筛选增加快捷项：最近 1 周 / 2 周 / 1 个月 / 3 个月及「全部日期」（高分股数量与个股曲线两处独立）。

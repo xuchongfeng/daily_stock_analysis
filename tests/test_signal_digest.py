@@ -109,6 +109,7 @@ class SignalDigestApiTest(unittest.TestCase):
                 }
             ],
             "board_highlights": [{"name": "白酒", "count": 1}],
+            "board_highlights_all": [{"name": "白酒", "count": 1}],
             "narrative_markdown": None,
             "narrative_generated": False,
         }
@@ -118,6 +119,7 @@ class SignalDigestApiTest(unittest.TestCase):
         self.assertEqual(data["window"]["trading_sessions"], 14)
         self.assertEqual(len(data["picks"]), 1)
         self.assertEqual(data["picks"][0]["code"], "600519")
+        self.assertEqual(len(data["board_highlights_all"]), 1)
 
 
 class SignalDigestServiceIntegrationTest(unittest.TestCase):
@@ -176,6 +178,61 @@ class SignalDigestServiceIntegrationTest(unittest.TestCase):
         top = out["picks"][0]
         self.assertEqual(top["code"], "600519")
         self.assertGreaterEqual(top["appearance_count"], 2)
+
+    def test_board_highlights_all_covers_non_top_stocks(self) -> None:
+        """top_k=1 时 Top 板块仅首股；全量板块统计仍包含窗口内其余标的。"""
+        db = MagicMock()
+        snap_a = '{"enhanced_context":{"fundamental_context":{"belong_boards":[{"name":"白酒"}]}}}'
+        snap_b = '{"enhanced_context":{"fundamental_context":{"belong_boards":[{"name":"银行"}]}}}'
+        r_a = AnalysisHistory(
+            code="600519",
+            name="茅台",
+            sentiment_score=90,
+            operation_advice="买入",
+            trend_prediction="看多",
+            analysis_summary="A",
+            context_snapshot=snap_a,
+            created_at=datetime(2026, 4, 8, 10, 0, 0),
+        )
+        r_b = AnalysisHistory(
+            code="000001",
+            name="平安",
+            sentiment_score=50,
+            operation_advice="买入",
+            trend_prediction="震荡",
+            analysis_summary="B",
+            context_snapshot=snap_b,
+            created_at=datetime(2026, 4, 8, 11, 0, 0),
+        )
+        db.list_analysis_history_since.return_value = [r_a, r_b]
+        db.get_concept_board_highlights_by_codes.side_effect = [
+            [{"name": "芯片概念", "count": 2}],
+            [{"name": "芯片概念", "count": 1}],
+        ]
+
+        with patch("src.services.signal_digest_service.get_effective_trading_date", return_value=date(2026, 4, 9)):
+            with patch(
+                "src.services.signal_digest_service.get_oldest_date_in_trading_window",
+                return_value=date(2026, 3, 1),
+            ):
+                out = sds.build_signal_digest(
+                    db,
+                    trading_sessions=14,
+                    top_k=1,
+                    market_filter="cn",
+                    exclude_batch=True,
+                    with_narrative=False,
+                )
+        self.assertEqual(len(out["picks"]), 1)
+        self.assertEqual(out["picks"][0]["code"], "600519")
+        top_names = {x["name"] for x in out["board_highlights"]}
+        all_names = {x["name"] for x in out["board_highlights_all"]}
+        self.assertEqual(top_names, {"白酒"})
+        self.assertEqual(all_names, {"白酒", "银行"})
+        concept_top = {x["name"] for x in out["concept_highlights"]}
+        concept_all = {x["name"] for x in out["concept_highlights_all"]}
+        self.assertEqual(concept_top, {"芯片概念"})
+        self.assertEqual(concept_all, {"芯片概念"})
 
     def test_buy_or_hold_filters_rows(self) -> None:
         db = MagicMock()
@@ -298,6 +355,7 @@ class SignalDigestHttpCacheTest(unittest.TestCase):
             },
             "picks": [],
             "board_highlights": [],
+            "board_highlights_all": [],
             "narrative_markdown": None,
             "narrative_generated": False,
         }

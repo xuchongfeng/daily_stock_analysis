@@ -121,6 +121,10 @@ def extract_fundamental_context(
 ) -> Optional[Dict[str, Any]]:
     """
     Resolve fundamental_context from context snapshot, with optional fallback payload.
+
+    Supports:
+    - Pipeline 快照：``enhanced_context.fundamental_context``（主路径）
+    - Agent 等扁平快照：根级 ``fundamental_context``（无 ``enhanced_context`` 包装）
     """
     snapshot_obj = parse_json_field(context_snapshot)
     if isinstance(snapshot_obj, dict):
@@ -129,6 +133,9 @@ def extract_fundamental_context(
             fundamental = enhanced.get("fundamental_context")
             if isinstance(fundamental, dict):
                 return fundamental
+        root_fc = snapshot_obj.get("fundamental_context")
+        if isinstance(root_fc, dict):
+            return root_fc
 
     fallback_obj = parse_json_field(fallback_fundamental_payload)
     if isinstance(fallback_obj, dict):

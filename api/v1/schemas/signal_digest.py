@@ -55,7 +55,22 @@ class SignalDigestBoardHighlight(BaseModel):
 class SignalDigestResponse(BaseModel):
     window: SignalDigestWindow
     picks: List[SignalDigestPick] = Field(default_factory=list)
-    board_highlights: List[SignalDigestBoardHighlight] = Field(default_factory=list)
+    board_highlights: List[SignalDigestBoardHighlight] = Field(
+        default_factory=list,
+        description="仅 Top-K 标的的归属板块共现（与 picks 一致）",
+    )
+    board_highlights_all: List[SignalDigestBoardHighlight] = Field(
+        default_factory=list,
+        description="窗口内全部符合条件标的的板块共现（不限于 Top-K）",
+    )
+    concept_highlights: List[SignalDigestBoardHighlight] = Field(
+        default_factory=list,
+        description="仅 Top-K 标的的概念板块共现",
+    )
+    concept_highlights_all: List[SignalDigestBoardHighlight] = Field(
+        default_factory=list,
+        description="窗口内全部符合条件标的的概念板块共现（不限于 Top-K）",
+    )
     narrative_markdown: Optional[str] = Field(None, description="可选 LLM 生成的 Markdown 短文")
     narrative_generated: bool = Field(False, description="是否成功生成叙事（非空）")
     from_cache: bool = Field(False, description="是否命中服务端 SQLite 缓存")

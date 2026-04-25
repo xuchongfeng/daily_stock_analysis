@@ -21,6 +21,7 @@ from api.v1.endpoints import (
     portfolio,
     market_scan,
     signal_digest,
+    concept_board,
     watchlist,
 )
 __all__ = [
@@ -36,5 +37,6 @@ __all__ = [
     "portfolio",
     "market_scan",
     "signal_digest",
+    "concept_board",
     "watchlist",
 ]

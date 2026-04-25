@@ -166,10 +166,12 @@ def _build_narrative_prompt(
     window: Dict[str, Any],
     picks: List[Dict[str, Any]],
     board_highlights: List[Dict[str, Any]],
+    concept_highlights: List[Dict[str, Any]],
 ) -> str:
     compact = {
         "window": window,
         "board_highlights": board_highlights[:12],
+        "concept_highlights": concept_highlights[:16],
         "picks": [
             {
                 "code": p["code"],
@@ -249,16 +251,28 @@ def build_signal_digest(
         picks_raw.append((score, latest, n))
 
     picks_raw.sort(key=lambda x: (-x[0], -x[2], x[1].code or ""))
-    top = picks_raw[: max(1, min(int(top_k), 50))]
 
-    picks_out: List[Dict[str, Any]] = []
-    board_counter: Counter[str] = Counter()
-    for score, latest, n in top:
+    boards_by_code: Dict[str, List[Dict[str, Any]]] = {}
+    board_counter_all: Counter[str] = Counter()
+    for _score, latest, _n in picks_raw:
+        code = latest.code or ""
         boards = _boards_from_record(latest)
+        boards_by_code[code] = boards
         for b in boards[:3]:
             name = b.get("name")
             if name:
-                board_counter[str(name)] += 1
+                board_counter_all[str(name)] += 1
+
+    top = picks_raw[: max(1, min(int(top_k), 50))]
+
+    picks_out: List[Dict[str, Any]] = []
+    board_counter_top: Counter[str] = Counter()
+    for score, latest, n in top:
+        boards = boards_by_code.get(latest.code or "", [])
+        for b in boards[:3]:
+            name = b.get("name")
+            if name:
+                board_counter_top[str(name)] += 1
         created = latest.created_at.isoformat() if latest.created_at else None
         picks_out.append(
             {
@@ -277,8 +291,25 @@ def build_signal_digest(
 
     board_highlights = [
         {"name": name, "count": c}
-        for name, c in board_counter.most_common(16)
+        for name, c in board_counter_top.most_common(16)
     ]
+    board_highlights_all = [
+        {"name": name, "count": c}
+        for name, c in board_counter_all.most_common(32)
+    ]
+    all_codes = [str(x[1].code or "").strip() for x in picks_raw if str(x[1].code or "").strip()]
+    top_codes = [str(x[1].code or "").strip() for x in top if str(x[1].code or "").strip()]
+    concept_highlights_all = []
+    concept_highlights = []
+    if hasattr(db, "get_concept_board_highlights_by_codes"):
+        try:
+            all_raw = db.get_concept_board_highlights_by_codes(all_codes, limit=32)
+            top_raw = db.get_concept_board_highlights_by_codes(top_codes, limit=16)
+            concept_highlights_all = all_raw if isinstance(all_raw, list) else []
+            concept_highlights = top_raw if isinstance(top_raw, list) else []
+        except Exception:
+            concept_highlights_all = []
+            concept_highlights = []
 
     window_info = {
         "trading_sessions": max(1, int(trading_sessions)),
@@ -302,6 +333,7 @@ def build_signal_digest(
                 window=window_info,
                 picks=picks_out,
                 board_highlights=board_highlights,
+                concept_highlights=concept_highlights,
             )
             narrative_md = analyzer.generate_text(
                 prompt,
@@ -317,6 +349,9 @@ def build_signal_digest(
         "window": window_info,
         "picks": picks_out,
         "board_highlights": board_highlights,
+        "board_highlights_all": board_highlights_all,
+        "concept_highlights": concept_highlights,
+        "concept_highlights_all": concept_highlights_all,
         "narrative_markdown": narrative_md,
         "narrative_generated": narrative_generated,
     }
