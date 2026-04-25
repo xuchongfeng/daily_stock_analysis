@@ -119,7 +119,7 @@ const ConceptBoardsPage: React.FC = () => {
           <div>
             <h1 className="text-lg font-semibold text-foreground md:text-xl">概念板块</h1>
             <p className="mt-1 text-sm text-secondary-text">
-              展示概念板块及板块下个股；个股按最近一次 AI 评分排序，未评分自动排末尾。
+              左侧板块按「最新成交量榜评分 &gt; 75 分个股数」倒序；右侧个股按最近一次 AI 评分排序，未评分自动排末尾。
             </p>
           </div>
         </div>
@@ -156,7 +156,9 @@ const ConceptBoardsPage: React.FC = () => {
                       }`}
                     >
                       <div className="truncate font-medium">{b.boardName}</div>
-                      <div className="mt-0.5 text-xs opacity-70">{b.boardCode} · {b.stocksCount} 只</div>
+                      <div className="mt-0.5 text-xs opacity-70">
+                        {b.boardCode} · {b.stocksCount} 只 · {b.volumeGe75Count ?? 0} 只 &gt; 75
+                      </div>
                     </button>
                   </li>
                 ))}

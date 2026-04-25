@@ -10,6 +10,7 @@ class ConceptBoardItem(BaseModel):
     board_code: str
     board_name: str
     stocks_count: int = 0
+    volume_ge_75_count: int = 0
     updated_at: Optional[str] = None
 
 

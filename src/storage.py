@@ -1598,16 +1598,75 @@ class DatabaseManager:
     def list_concept_boards(self, *, limit: int = 200) -> List[Dict[str, Any]]:
         limit = max(1, min(int(limit or 200), 1000))
         with self.get_session() as session:
+            volume_cond = or_(
+                AnalysisHistory.batch_kind == "top_volume_daily",
+                and_(
+                    AnalysisHistory.batch_kind.is_(None),
+                    AnalysisHistory.batch_run_id.like("tv_%"),
+                ),
+            )
+            latest_volume_id_subq = (
+                select(
+                    AnalysisHistory.code.label("code"),
+                    func.max(AnalysisHistory.id).label("max_id"),
+                )
+                .where(volume_cond)
+                .group_by(AnalysisHistory.code)
+                .subquery()
+            )
+            latest_volume_score_subq = (
+                select(
+                    AnalysisHistory.code.label("code"),
+                    AnalysisHistory.sentiment_score.label("sentiment_score"),
+                )
+                .join(
+                    latest_volume_id_subq,
+                    AnalysisHistory.id == latest_volume_id_subq.c.max_id,
+                )
+                .subquery()
+            )
+            over_75_count_expr = func.coalesce(
+                func.sum(
+                    case(
+                        (latest_volume_score_subq.c.sentiment_score > 75, 1),
+                        else_=0,
+                    )
+                ),
+                0,
+            )
             rows = session.execute(
-                select(ConceptBoard)
-                .order_by(desc(ConceptBoard.stocks_count), asc(ConceptBoard.board_name))
+                select(
+                    ConceptBoard.board_code,
+                    ConceptBoard.board_name,
+                    ConceptBoard.stocks_count,
+                    ConceptBoard.updated_at,
+                    over_75_count_expr.label("volume_ge_75_count"),
+                )
+                .outerjoin(ConceptBoardStock, ConceptBoardStock.board_id == ConceptBoard.id)
+                .outerjoin(
+                    latest_volume_score_subq,
+                    latest_volume_score_subq.c.code == ConceptBoardStock.stock_code,
+                )
+                .group_by(
+                    ConceptBoard.id,
+                    ConceptBoard.board_code,
+                    ConceptBoard.board_name,
+                    ConceptBoard.stocks_count,
+                    ConceptBoard.updated_at,
+                )
+                .order_by(
+                    desc(over_75_count_expr),
+                    desc(ConceptBoard.stocks_count),
+                    asc(ConceptBoard.board_name),
+                )
                 .limit(limit)
-            ).scalars().all()
+            ).all()
             return [
                 {
-                    "board_code": r.board_code,
-                    "board_name": r.board_name,
+                    "board_code": str(r.board_code),
+                    "board_name": str(r.board_name),
                     "stocks_count": int(r.stocks_count or 0),
+                    "volume_ge_75_count": int(r.volume_ge_75_count or 0),
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 }
                 for r in rows

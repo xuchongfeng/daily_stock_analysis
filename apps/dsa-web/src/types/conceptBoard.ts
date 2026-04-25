@@ -2,6 +2,7 @@ export type ConceptBoardItem = {
   boardCode: string;
   boardName: string;
   stocksCount: number;
+  volumeGe75Count?: number;
   updatedAt?: string | null;
 };
 
