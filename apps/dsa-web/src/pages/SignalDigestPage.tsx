@@ -39,12 +39,12 @@ const EXCERPT_HOVER_MS = 1500;
 function StatPill({ children, accent }: { children: React.ReactNode; accent?: 'default' | 'muted' | 'ok' | 'info' }) {
   const acc =
     accent === 'ok'
-      ? 'border-emerald-500/20 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300/90'
+      ? 'border-emerald-600/35 bg-emerald-500/12 text-emerald-800 dark:text-emerald-300/90'
       : accent === 'info'
-        ? 'border-[hsl(var(--primary))]/25 bg-[hsl(var(--primary))]/5 text-foreground'
+        ? 'border-[hsl(var(--primary))]/45 bg-[hsl(var(--primary))]/16 text-foreground'
         : accent === 'muted'
-          ? 'border-border/50 bg-hover/30 text-secondary-text'
-          : 'border-border/50 bg-hover/20 text-foreground';
+          ? 'border-border/80 bg-hover/40 text-secondary-text'
+          : 'border-border/80 bg-hover/30 text-foreground';
   return <span className={cn('inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-medium tabular-nums', acc)}>{children}</span>;
 }
 
@@ -68,7 +68,7 @@ function TagCloud({
         <Badge
           key={b.name}
           variant="default"
-          className={cn('border-0 bg-hover/50 font-normal text-foreground shadow-none', variant === 'compact' && 'text-[11px] py-0')}
+          className={cn('border border-border/70 bg-hover/45 font-medium text-foreground shadow-none', variant === 'compact' && 'text-[11px] py-0')}
         >
           {linkToConceptBoards ? (
             <Link

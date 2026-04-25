@@ -273,10 +273,10 @@ const MarketScannerPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setMainTab('batches')}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`ui-tab-pill rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
             mainTab === 'batches'
-              ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
-              : 'border-border/60 text-secondary-text hover:bg-hover'
+              ? 'ui-tab-pill-active'
+              : ''
           }`}
         >
           批次浏览
@@ -284,10 +284,10 @@ const MarketScannerPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setMainTab('rating')}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+          className={`ui-tab-pill rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
             mainTab === 'rating'
-              ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
-              : 'border-border/60 text-secondary-text hover:bg-hover'
+              ? 'ui-tab-pill-active'
+              : ''
           }`}
         >
           评分历史
@@ -313,10 +313,10 @@ const MarketScannerPage: React.FC = () => {
                   setScanKindTab(t.id);
                   setPage(1);
                 }}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`ui-tab-pill rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                   scanKindTab === t.id
-                    ? 'border-[hsl(var(--primary))] bg-[var(--nav-active-bg)] text-foreground'
-                    : 'border-border/60 text-secondary-text hover:bg-hover'
+                    ? 'ui-tab-pill-active'
+                    : ''
                 }`}
               >
                 {t.label}

@@ -24,7 +24,7 @@
   /* HSL tokens used by Tailwind-based components */
 
   --background: 216 33% 97%;
-  --foreground: 228 35% 12%;
+  --foreground: 226 42% 11%;
   --card: 0 0% 100%;
   --card-foreground: 228 35% 12%;
   --popover: 0 0% 100%;
@@ -34,19 +34,19 @@
   --secondary: 214 32% 91%;
   --secondary-foreground: 228 35% 16%;
   --muted: 214 30% 94%;
-  --muted-foreground: 224 12% 42%;
+  --muted-foreground: 224 14% 38%;
   --accent: 214 32% 93%;
   --accent-foreground: 228 35% 16%;
   --destructive: 349 82% 56%;
   --destructive-foreground: 210 33% 98%;
-  --border: 217 28% 84%;
-  --input: 217 28% 84%;
+  --border: 216 26% 76%;
+  --input: 216 26% 76%;
   --ring: 193 100% 43%;
   --radius: 1rem;
   --elevated: 0 0% 100%;
-  --hover: 214 29% 90%;
-  --secondary-text: 224 18% 28%;
-  --muted-text: 224 12% 35%;
+  --hover: 213 40% 90%;
+  --secondary-text: 224 24% 22%;
+  --muted-text: 224 16% 32%;
 
   --color-cyan: hsl(var(--primary));
   --color-cyan-dim: hsl(var(--primary) / 0.8);
@@ -119,10 +119,10 @@
   --text-muted-text: hsl(var(--muted-text));
 
   /* Navigation related (using HSL format) */
-  --nav-active-bg: hsl(var(--primary) / 0.09);
-  --nav-active-border: hsl(var(--primary) / 0.24);
+  --nav-active-bg: hsl(var(--primary) / 0.16);
+  --nav-active-border: hsl(var(--primary) / 0.4);
   --nav-active-shadow: hsl(var(--primary) / 0.04);
-  --nav-hover-bg: hsl(var(--primary) / 0.05);
+  --nav-hover-bg: hsl(var(--primary) / 0.11);
   --nav-icon-active: hsl(var(--primary));
   --nav-item-height: 2.75rem;
   --nav-item-padding-x: 1rem;
@@ -228,10 +228,19 @@
   --settings-skeleton-strong: hsl(218 20% 84% / 0.92);
   --settings-skeleton-soft: hsl(218 22% 92% / 0.96);
   --input-surface-bg: var(--bg-card);
-  --input-surface-border: hsl(218 24% 80% / 0.92);
-  --input-surface-border-hover: hsl(218 20% 70% / 0.92);
-  --input-surface-border-focus: hsl(var(--primary) / 0.38);
-  --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.15);
+  --input-surface-border: hsl(216 26% 72% / 0.95);
+  --input-surface-border-hover: hsl(216 28% 60% / 0.96);
+  --input-surface-border-focus: hsl(var(--primary) / 0.56);
+  --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.2);
+
+  /* Stocks-style high-contrast pills (Light) */
+  --ui-pill-bg: hsl(213 44% 95%);
+  --ui-pill-bg-hover: hsl(213 48% 91%);
+  --ui-pill-border: hsl(216 24% 70% / 0.92);
+  --ui-pill-text: hsl(224 24% 22%);
+  --ui-pill-active-bg: hsl(var(--primary) / 0.18);
+  --ui-pill-active-border: hsl(var(--primary) / 0.52);
+  --ui-pill-active-text: hsl(224 30% 16%);
   --settings-input-rest-border: hsl(218 22% 82% / 0.72);
   --gradient-primary:
     linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / 0.74));
@@ -495,6 +504,13 @@
   --input-surface-border-hover: rgba(255, 255, 255, 0.18);
   --input-surface-border-focus: hsl(var(--primary) / 0.45);
   --input-surface-focus-ring: 0 0 0 4px hsl(var(--primary) / 0.18);
+  --ui-pill-bg: hsl(var(--foreground) / 0.06);
+  --ui-pill-bg-hover: hsl(var(--foreground) / 0.1);
+  --ui-pill-border: hsl(var(--foreground) / 0.22);
+  --ui-pill-text: hsl(var(--secondary-text));
+  --ui-pill-active-bg: hsl(var(--primary) / 0.2);
+  --ui-pill-active-border: hsl(var(--primary) / 0.48);
+  --ui-pill-active-text: hsl(var(--foreground));
   --settings-input-rest-border: hsl(var(--border) / 0.58);
   --gradient-primary:
     linear-gradient(135deg, rgba(0, 212, 255, 0.96), rgba(0, 168, 204, 0.96));
@@ -2097,11 +2113,11 @@ textarea {
 }
 
 .settings-nav-item-active {
-  border-color: hsl(var(--primary) / 0.36);
-  background: hsl(var(--primary) / 0.12);
+  border-color: hsl(var(--primary) / 0.52);
+  background: hsl(var(--primary) / 0.2);
   box-shadow:
-    3px 4px 0 hsl(var(--primary) / 0.08),
-    10px 14px 26px hsl(214 24% 38% / 0.12);
+    2px 3px 0 hsl(var(--primary) / 0.1),
+    10px 14px 26px hsl(214 24% 38% / 0.16);
 }
 
 .dark .settings-nav-item-active {
@@ -2417,6 +2433,46 @@ textarea {
   color: hsl(var(--foreground));
   border-color: hsl(var(--primary) / 0.4);
   background: hsl(var(--primary) / 0.05);
+}
+
+/* High-contrast options/tabs, tuned for dense stock dashboards */
+.ui-option-chip {
+  border: 1px solid var(--ui-pill-border);
+  background: var(--ui-pill-bg);
+  color: var(--ui-pill-text);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.56);
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.ui-option-chip:hover {
+  border-color: hsl(var(--primary) / 0.34);
+  background: var(--ui-pill-bg-hover);
+  color: hsl(var(--foreground));
+}
+
+.ui-tab-pill {
+  border: 1px solid var(--ui-pill-border);
+  background: var(--ui-pill-bg);
+  color: var(--ui-pill-text);
+  box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.58);
+}
+
+.ui-tab-pill:hover {
+  border-color: hsl(var(--primary) / 0.36);
+  background: var(--ui-pill-bg-hover);
+  color: hsl(var(--foreground));
+}
+
+.ui-tab-pill-active {
+  border-color: var(--ui-pill-active-border);
+  background: var(--ui-pill-active-bg);
+  color: var(--ui-pill-active-text);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.62),
+    0 0 0 1px hsl(var(--primary) / 0.08);
 }
 
 /* Skill description tooltip */

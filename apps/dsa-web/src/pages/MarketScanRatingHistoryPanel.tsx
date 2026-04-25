@@ -51,7 +51,7 @@ const DATE_RANGE_QUICK_PRESETS: readonly { key: string; label: string; days: num
 ];
 
 const QUICK_DATE_CHIP =
-  'rounded-full border border-border/60 px-2.5 py-1 text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-foreground';
+  'ui-option-chip rounded-full px-2.5 py-1 text-xs font-semibold transition-colors';
 
 type QuickDatePresetsProps = {
   onPick: (range: { start: string; end: string }) => void;
