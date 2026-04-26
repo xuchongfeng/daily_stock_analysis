@@ -1,6 +1,7 @@
 import type React from 'react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Line, LineChart, ResponsiveContainer, Tooltip as RechartsTooltip, XAxis, YAxis } from 'recharts';
 import { historyApi } from '../../api/history';
 import { ScoreBadge } from './SignalBadges';
 
@@ -39,6 +40,11 @@ function calcStartDate(days: number): string {
 function formatDisplayDate(ymd: string): string {
   return ymd.length >= 10 ? ymd.slice(5) : ymd;
 }
+
+type ChartPoint = {
+  label: string;
+  score: number;
+};
 
 type ScoreHistoryHoverBadgeProps = {
   stockCode?: string | null;
@@ -182,20 +188,56 @@ export const ScoreHistoryHoverBadge: React.FC<ScoreHistoryHoverBadgeProps> = ({
     if (points.length === 0) {
       return <div className="text-xs text-secondary-text">近 {days} 天无评分记录</div>;
     }
+    const chartData: ChartPoint[] = points
+      .slice()
+      .reverse()
+      .map((p) => ({
+        label: formatDisplayDate(p.date),
+        score: p.score,
+      }));
+    const latest = points[0]?.score;
     return (
-      <div className="space-y-1">
-        <div className="text-[11px] font-semibold text-secondary-text">最近 {days} 天评分（按日最新）</div>
-        <ul className="space-y-0.5">
-          {points.map((p) => (
-            <li key={`${code}-${p.date}`} className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-secondary-text">{formatDisplayDate(p.date)}</span>
-              <span className="font-semibold tabular-nums text-foreground">{p.score}</span>
-            </li>
-          ))}
-        </ul>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-3 text-[11px]">
+          <span className="font-semibold text-secondary-text">最近 {days} 天评分曲线</span>
+          <span className="font-semibold tabular-nums text-foreground">最新 {latest}</span>
+        </div>
+        <div className="h-28 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 6, right: 4, left: -20, bottom: 0 }}>
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} stroke="hsl(var(--muted-foreground))" />
+              <YAxis
+                domain={[0, 100]}
+                tick={{ fontSize: 10 }}
+                tickCount={5}
+                width={28}
+                stroke="hsl(var(--muted-foreground))"
+              />
+              <RechartsTooltip
+                contentStyle={{
+                  borderRadius: 10,
+                  border: '1px solid hsl(var(--border))',
+                  background: 'hsl(var(--card))',
+                  fontSize: '12px',
+                }}
+                formatter={(value) => [`${value ?? '—'}`, '评分']}
+                labelFormatter={(label) => `日期 ${label}`}
+              />
+              <Line
+                type="monotone"
+                dataKey="score"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                activeDot={{ r: 4 }}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
-  }, [code, days, loadError, loading, points]);
+  }, [days, loadError, loading, points]);
 
   const tip =
     open && typeof document !== 'undefined'
