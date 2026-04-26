@@ -299,13 +299,6 @@ def build_signal_digest(
     ]
     all_codes = [str(x[1].code or "").strip() for x in picks_raw if str(x[1].code or "").strip()]
     top_codes = [str(x[1].code or "").strip() for x in top if str(x[1].code or "").strip()]
-    logger.info(
-        "signal_digest concept-chain inputs: all_codes=%d top_codes=%d all_sample=%s top_sample=%s",
-        len(all_codes),
-        len(top_codes),
-        all_codes[:12],
-        top_codes[:12],
-    )
     concept_highlights_all = []
     concept_highlights = []
     concept_tags_by_code: Dict[str, List[str]] = {}
@@ -315,43 +308,21 @@ def build_signal_digest(
             top_raw = db.get_concept_board_highlights_by_codes(top_codes, limit=16)
             concept_highlights_all = all_raw if isinstance(all_raw, list) else []
             concept_highlights = top_raw if isinstance(top_raw, list) else []
-            logger.info(
-                "signal_digest concept highlights resolved: all=%d top=%d all_top5=%s top_top5=%s",
-                len(concept_highlights_all),
-                len(concept_highlights),
-                concept_highlights_all[:5],
-                concept_highlights[:5],
-            )
         except Exception as exc:
             logger.exception("signal_digest concept highlights failed: %s", exc)
             concept_highlights_all = []
             concept_highlights = []
-    else:
-        logger.info("signal_digest concept highlights skipped: db has no get_concept_board_highlights_by_codes")
     if hasattr(db, "get_concept_tags_by_codes"):
         try:
             tags_raw = db.get_concept_tags_by_codes(top_codes, per_stock_limit=8)
             concept_tags_by_code = tags_raw if isinstance(tags_raw, dict) else {}
-            logger.info(
-                "signal_digest concept tags resolved: stocks_with_tags=%d sample=%s",
-                len(concept_tags_by_code),
-                {k: v[:3] for k, v in list(concept_tags_by_code.items())[:5]},
-            )
         except Exception as exc:
             logger.exception("signal_digest concept tags failed: %s", exc)
             concept_tags_by_code = {}
-    else:
-        logger.info("signal_digest concept tags skipped: db has no get_concept_tags_by_codes")
 
     for p in picks_out:
         code = str(p.get("code") or "").strip()
         p["concept_tags"] = concept_tags_by_code.get(code, [])
-    logger.info(
-        "signal_digest concept chain final: picks=%d picks_with_concept_tags=%d",
-        len(picks_out),
-        sum(1 for p in picks_out if p.get("concept_tags")),
-    )
-
     window_info = {
         "trading_sessions": max(1, int(trading_sessions)),
         "anchor_date": anchor_date.isoformat(),

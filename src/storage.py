@@ -1822,13 +1822,6 @@ class DatabaseManager:
                 if re.fullmatch(r"\d{6}", tail6):
                     codes_set.add(tail6)
         codes = sorted(codes_set)
-        logger.info(
-            "concept_highlights lookup: raw=%d normalized=%d raw_sample=%s normalized_sample=%s",
-            len(raw_codes),
-            len(codes),
-            raw_codes[:12],
-            codes[:12],
-        )
         if not codes:
             return []
         limit = max(1, min(int(limit or 32), 128))
@@ -1855,13 +1848,6 @@ class DatabaseManager:
                 {"name": name, "count": count}
                 for name, count in sorted(board_counter.items(), key=lambda x: (-x[1], x[0]))[:limit]
             ]
-            logger.info(
-                "concept_highlights result: rows=%d top5=%s chunk_size=%d chunks=%d",
-                len(out),
-                out[:5],
-                chunk_size,
-                (len(codes) + chunk_size - 1) // chunk_size,
-            )
             return out
 
     def get_concept_tags_by_codes(
@@ -1886,14 +1872,6 @@ class DatabaseManager:
         for code in codes:
             normalized_to_original.setdefault(code.upper(), []).append(code)
         query_codes = sorted(set(codes) | set(normalized_to_original.keys()))
-        logger.info(
-            "concept_tags lookup: input=%d query_codes=%d input_sample=%s query_sample=%s",
-            len(codes),
-            len(query_codes),
-            codes[:12],
-            query_codes[:12],
-        )
-
         chunk_size = 800
         rows: List[Tuple[Any, Any]] = []
         with self.get_session() as session:
@@ -1924,13 +1902,6 @@ class DatabaseManager:
                     continue
                 seen[original].add(board_name)
                 tmp[original].append(str(board_name))
-        logger.info(
-            "concept_tags result: stocks_with_tags=%d sample=%s chunk_size=%d chunks=%d",
-            sum(1 for _, v in tmp.items() if v),
-            {k: v[:3] for k, v in list(tmp.items())[:5]},
-            chunk_size,
-            (len(query_codes) + chunk_size - 1) // chunk_size,
-        )
         return tmp
 
     def get_analysis_history_paginated(
