@@ -187,6 +187,9 @@ const SignalDigestPickRow: React.FC<{ pick: SignalDigestPick; index: number }> =
         <td className="px-3 py-2.5 sm:px-4">
           <AdviceBadge advice={p.operationAdvice} />
         </td>
+        <td className="max-w-[14rem] truncate px-3 py-2.5 text-xs text-secondary-text sm:max-w-none sm:px-4">
+          {(p.conceptTags || []).join('、') || '—'}
+        </td>
         <td className="max-w-[7rem] truncate px-3 py-2.5 text-secondary-text sm:max-w-none sm:px-4">{p.trendPrediction ?? '—'}</td>
         <td className="px-2 py-2.5 text-center align-middle sm:pr-4">
           <AddToWatchlistButton stockCode={p.code} stockName={p.name} compact />
@@ -507,6 +510,7 @@ const SignalDigestPage: React.FC = () => {
                       <th className="sticky top-0 z-10 bg-background/90 px-3 py-2.5 font-medium backdrop-blur-sm sm:px-4">次数</th>
                       <th className="sticky top-0 z-10 bg-background/90 px-3 py-2.5 font-medium backdrop-blur-sm sm:px-4">评分</th>
                       <th className="sticky top-0 z-10 bg-background/90 px-3 py-2.5 font-medium backdrop-blur-sm sm:px-4">建议</th>
+                      <th className="sticky top-0 z-10 bg-background/90 px-3 py-2.5 font-medium backdrop-blur-sm sm:px-4">概念标签</th>
                       <th className="sticky top-0 z-10 bg-background/90 px-3 py-2.5 font-medium backdrop-blur-sm sm:px-4">趋势</th>
                       <th className="sticky top-0 z-10 bg-background/90 px-2 py-2.5 text-center font-medium backdrop-blur-sm sm:pr-4">自选</th>
                     </tr>

@@ -496,7 +496,7 @@ const MarketScannerPage: React.FC = () => {
           ) : (
             <>
               <div className="overflow-x-auto rounded-xl border border-border/60">
-                <table className="w-full min-w-[760px] text-left text-sm">
+                <table className="w-full min-w-[920px] text-left text-sm">
                   <thead className="bg-hover/50 text-xs text-secondary-text">
                     <tr>
                       <th className="w-12 px-2 py-2 text-right tabular-nums">序号</th>
@@ -507,6 +507,7 @@ const MarketScannerPage: React.FC = () => {
                       <th className="px-3 py-2">涨跌%</th>
                       <th className="px-3 py-2">评分</th>
                       <th className="px-3 py-2">建议</th>
+                      <th className="px-3 py-2">概念标签</th>
                       <th className="w-12 px-2 py-2 text-center">自选</th>
                       <th className="px-3 py-2" />
                     </tr>
@@ -539,6 +540,11 @@ const MarketScannerPage: React.FC = () => {
                         </td>
                         <td className="px-3 py-2 text-xs">
                           <AdviceBadge advice={row.operationAdvice} />
+                        </td>
+                        <td className="max-w-[14rem] px-3 py-2 text-xs text-secondary-text">
+                          <div className="truncate" title={(row.conceptTags || []).join('、')}>
+                            {(row.conceptTags || []).join('、') || '—'}
+                          </div>
                         </td>
                         <td className="px-2 py-2 text-center align-middle">
                           <AddToWatchlistButton stockCode={row.stockCode} stockName={row.stockName} compact />

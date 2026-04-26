@@ -2,6 +2,7 @@ import type React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Legend, Cell } from 'recharts';
 import { analysisApi, DuplicateTaskError } from '../api/analysis';
+import { historyApi } from '../api/history';
 import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
@@ -56,6 +57,7 @@ type PortfolioCheckupRow = {
   stockName?: string | null;
   sentimentScore?: number | null;
   operationAdvice?: string | null;
+  conceptTags?: string[];
   analysisSummary?: string | null;
   error?: string | null;
 };
@@ -924,6 +926,18 @@ const PortfolioPage: React.FC = () => {
               return;
             }
 
+            let conceptTags: string[] = [];
+            try {
+              const latest = await historyApi.getList({
+                stockCode: result.stockCode || stockCode || '',
+                page: 1,
+                limit: 1,
+              });
+              conceptTags = latest.items?.[0]?.conceptTags || [];
+            } catch {
+              conceptTags = [];
+            }
+
             setCheckupRows((prev) =>
               prev.map((row) =>
                 matchRow(row)
@@ -933,6 +947,7 @@ const PortfolioPage: React.FC = () => {
                       stockName: result.stockName || result.report?.meta?.stockName || null,
                       sentimentScore: summary.sentimentScore,
                       operationAdvice: summary.operationAdvice,
+                      conceptTags,
                       analysisSummary: summary.analysisSummary,
                     }
                   : row
@@ -1266,13 +1281,14 @@ const PortfolioPage: React.FC = () => {
         ) : null}
         {checkupRows.length > 0 ? (
           <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="w-full min-w-[880px] text-sm">
+            <table className="w-full min-w-[980px] text-sm">
               <thead className="text-xs text-secondary border-b border-white/10">
                 <tr>
                   <th className="text-left py-2 pr-2">代码</th>
                   <th className="text-left py-2 pr-2">名称</th>
                   <th className="text-right py-2 pr-2">AI 评分</th>
                   <th className="text-left py-2 pr-2">操作建议</th>
+                  <th className="text-left py-2 pr-2">概念标签</th>
                   <th className="text-left py-2 pr-2">摘要</th>
                   <th className="text-left py-2">状态</th>
                   <th className="text-center py-2 w-12">自选</th>
@@ -1288,6 +1304,11 @@ const PortfolioPage: React.FC = () => {
                     </td>
                     <td className="py-2 pr-2 text-xs text-foreground">
                       {row.status === 'completed' ? <AdviceBadge advice={row.operationAdvice} /> : '—'}
+                    </td>
+                    <td className="max-w-[14rem] py-2 pr-2 text-xs text-secondary">
+                      <div className="truncate" title={(row.conceptTags || []).join('、')}>
+                        {(row.conceptTags || []).join('、') || '—'}
+                      </div>
                     </td>
                     <td className="py-2 pr-2 text-xs text-secondary max-w-[min(28rem,40vw)]">
                       {row.status === 'completed' && row.analysisSummary ? (

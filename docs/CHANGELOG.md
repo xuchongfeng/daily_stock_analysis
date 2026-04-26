@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 新增概念板块数据链路：`scripts/init_concept_boards.py <json_path>` 可从外部 JSON 初始化 `concept_boards` / `concept_board_stocks`；保留个股 `tag_industry` 与 `tag_concept` 标签。
 - [新功能] 新增概念板块 API：`GET /api/v1/concept-boards`、`GET /api/v1/concept-boards/{board_code}/stocks`；板块个股按最近一次 AI 评分排序，未评分排末尾。
 - [改进] Web 新增「概念板块」页面（`/concept-boards`）与侧边栏入口，支持查看板块列表、板块个股、最近评分及行业/概念标签。
+- [改进] 概念板块列表按「最近一次分析建议为买入或持有（含强烈买入等含「买入」、英文 Buy/Hold）」的个股数倒序；接口增加 `buy_or_hold_count`，仍返回成交量榜评分 &gt;75 个股数供参考。
+- [改进] Web「信号摘要 / 持仓 AI 体检 / 榜单扫描 / 我的自选」个股表格新增「概念标签」列；后端 `signal-digest`、`market-scan batch items`、`history list` 同步返回 `concept_tags`。
 - [改进] 信号摘要新增概念维度聚合：响应增加 `concept_highlights` / `concept_highlights_all`，页面展示 Top 与全量两组概念共现并纳入 AI 叙事输入。
 - [修复] `extract_fundamental_context`：除 `enhanced_context.fundamental_context` 外，兼容 Agent 等路径写入的根级 `fundamental_context`，信号摘要/板块共现可正确读取 `belong_boards`。
 - [改进] 信号摘要：API 增加 `board_highlights_all`（窗口内全部符合条件标的的板块共现，与原有 Top-K 的 `board_highlights` 并存）；Web 同时展示「全量板块」与「Top 标的板块」；个股分析摘要改为悬停约 1.5 秒后弹出，移除表格下方独立「摘要摘录」列表。

@@ -301,6 +301,7 @@ def build_signal_digest(
     top_codes = [str(x[1].code or "").strip() for x in top if str(x[1].code or "").strip()]
     concept_highlights_all = []
     concept_highlights = []
+    concept_tags_by_code: Dict[str, List[str]] = {}
     if hasattr(db, "get_concept_board_highlights_by_codes"):
         try:
             all_raw = db.get_concept_board_highlights_by_codes(all_codes, limit=32)
@@ -310,6 +311,16 @@ def build_signal_digest(
         except Exception:
             concept_highlights_all = []
             concept_highlights = []
+    if hasattr(db, "get_concept_tags_by_codes"):
+        try:
+            tags_raw = db.get_concept_tags_by_codes(top_codes, per_stock_limit=8)
+            concept_tags_by_code = tags_raw if isinstance(tags_raw, dict) else {}
+        except Exception:
+            concept_tags_by_code = {}
+
+    for p in picks_out:
+        code = str(p.get("code") or "").strip()
+        p["concept_tags"] = concept_tags_by_code.get(code, [])
 
     window_info = {
         "trading_sessions": max(1, int(trading_sessions)),

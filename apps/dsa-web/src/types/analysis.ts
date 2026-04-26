@@ -197,6 +197,7 @@ export interface HistoryItem {
   reportType?: string;
   sentimentScore?: number;
   operationAdvice?: string;
+  conceptTags?: string[];
   createdAt: string;
 }
 

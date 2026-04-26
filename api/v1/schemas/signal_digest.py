@@ -45,6 +45,7 @@ class SignalDigestPick(BaseModel):
     trend_prediction: Optional[str] = None
     analysis_summary_excerpt: Optional[str] = None
     boards: List[SignalDigestBoardRef] = Field(default_factory=list)
+    concept_tags: List[str] = Field(default_factory=list)
 
 
 class SignalDigestBoardHighlight(BaseModel):

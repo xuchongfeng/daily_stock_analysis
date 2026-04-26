@@ -193,6 +193,7 @@ const WatchlistPage: React.FC = () => {
                   <th className="py-2 pr-3 font-medium">名称</th>
                   <th className="py-2 pr-3 font-medium">AI 评分</th>
                   <th className="py-2 pr-3 font-medium">买卖建议</th>
+                  <th className="py-2 pr-3 font-medium">概念标签</th>
                   <th className="py-2 pr-3 font-medium">操作</th>
                 </tr>
               </thead>
@@ -221,6 +222,9 @@ const WatchlistPage: React.FC = () => {
                         ) : (
                           <span className="text-secondary-text">暂无分析</span>
                         )}
+                      </td>
+                      <td className="max-w-[16rem] truncate py-2 pr-3 text-xs text-secondary-text">
+                        {(latest?.conceptTags || []).join('、') || '—'}
                       </td>
                       <td className="py-2 pr-3">
                         <div className="flex flex-wrap items-center gap-2">

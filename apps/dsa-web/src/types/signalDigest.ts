@@ -28,6 +28,7 @@ export type SignalDigestPick = {
   trendPrediction?: string | null;
   analysisSummaryExcerpt?: string | null;
   boards: SignalDigestBoardRef[];
+  conceptTags?: string[];
 };
 
 export type SignalDigestBoardHighlight = {

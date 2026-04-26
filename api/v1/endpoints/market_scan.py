@@ -195,6 +195,8 @@ def list_market_scan_batch_items(
             offset=offset,
             limit=limit,
         )
+        code_list = [str(r.code or "").strip() for r in records if str(r.code or "").strip()]
+        concept_tags_by_code = db_manager.get_concept_tags_by_codes(code_list, per_stock_limit=8) if code_list else {}
         items = [
             MarketScanItem(
                 id=r.id,
@@ -204,6 +206,7 @@ def list_market_scan_batch_items(
                 report_type=r.report_type,
                 sentiment_score=r.sentiment_score,
                 operation_advice=r.operation_advice,
+                concept_tags=concept_tags_by_code.get(str(r.code or "").strip(), []),
                 rank_in_batch=r.rank_in_batch,
                 ref_change_pct=r.ref_change_pct,
                 ref_trade_volume=getattr(r, "ref_trade_volume", None),

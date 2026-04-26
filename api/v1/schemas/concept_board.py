@@ -11,6 +11,7 @@ class ConceptBoardItem(BaseModel):
     board_name: str
     stocks_count: int = 0
     volume_ge_75_count: int = 0
+    buy_or_hold_count: int = 0
     updated_at: Optional[str] = None
 
 

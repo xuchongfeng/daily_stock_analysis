@@ -25,6 +25,7 @@ class MarketScanItem(BaseModel):
     report_type: Optional[str] = None
     sentiment_score: Optional[int] = None
     operation_advice: Optional[str] = None
+    concept_tags: List[str] = Field(default_factory=list)
     rank_in_batch: Optional[int] = None
     ref_change_pct: Optional[float] = None
     ref_trade_volume: Optional[float] = Field(

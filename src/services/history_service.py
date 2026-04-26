@@ -110,10 +110,14 @@ class HistoryService:
                 offset=offset,
                 limit=limit
             )
+
+            code_list = [str((record.code or "")).strip() for record in records if str((record.code or "")).strip()]
+            concept_tags_by_code = self.db.get_concept_tags_by_codes(code_list, per_stock_limit=8) if code_list else {}
             
             # Convert to response format
             items = []
             for record in records:
+                code_key = str((record.code or "")).strip()
                 items.append({
                     "id": record.id,
                     "query_id": record.query_id,
@@ -122,6 +126,7 @@ class HistoryService:
                     "report_type": record.report_type,
                     "sentiment_score": record.sentiment_score,
                     "operation_advice": record.operation_advice,
+                    "concept_tags": concept_tags_by_code.get(code_key, []),
                     "created_at": record.created_at.isoformat() if record.created_at else None,
                 })
             

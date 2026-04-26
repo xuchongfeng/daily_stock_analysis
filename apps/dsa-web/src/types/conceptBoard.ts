@@ -3,6 +3,7 @@ export type ConceptBoardItem = {
   boardName: string;
   stocksCount: number;
   volumeGe75Count?: number;
+  buyOrHoldCount?: number;
   updatedAt?: string | null;
 };
 

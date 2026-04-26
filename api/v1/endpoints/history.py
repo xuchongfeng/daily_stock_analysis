@@ -106,6 +106,7 @@ def get_history_list(
                 report_type=item.get("report_type"),
                 sentiment_score=item.get("sentiment_score"),
                 operation_advice=item.get("operation_advice"),
+                concept_tags=item.get("concept_tags") or [],
                 created_at=item.get("created_at")
             )
             for item in result.get("items", [])

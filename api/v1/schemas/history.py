@@ -27,6 +27,7 @@ class HistoryItem(BaseModel):
         description="情绪评分（历史数据可能超出 0-100 范围，读取时不做约束）",
     )
     operation_advice: Optional[str] = Field(None, description="操作建议")
+    concept_tags: List[str] = Field(default_factory=list, description="概念标签（来自概念板块映射）")
     created_at: Optional[str] = Field(None, description="创建时间")
     
     class Config:

@@ -1625,6 +1625,33 @@ class DatabaseManager:
                 )
                 .subquery()
             )
+            latest_any_id_subq = (
+                select(
+                    AnalysisHistory.code.label("code"),
+                    func.max(AnalysisHistory.id).label("max_id"),
+                )
+                .group_by(AnalysisHistory.code)
+                .subquery()
+            )
+            latest_any_advice_subq = (
+                select(
+                    AnalysisHistory.code.label("code"),
+                    AnalysisHistory.operation_advice.label("operation_advice"),
+                )
+                .join(
+                    latest_any_id_subq,
+                    AnalysisHistory.id == latest_any_id_subq.c.max_id,
+                )
+                .subquery()
+            )
+            advice_col = func.coalesce(latest_any_advice_subq.c.operation_advice, "")
+            advice_lc = func.lower(advice_col)
+            is_buy_or_hold = or_(
+                func.instr(advice_col, "持有") > 0,
+                advice_lc == "hold",
+                func.instr(advice_col, "买入") > 0,
+                advice_lc.in_(("buy", "strong buy")),
+            )
             over_75_count_expr = func.coalesce(
                 func.sum(
                     case(
@@ -1634,6 +1661,10 @@ class DatabaseManager:
                 ),
                 0,
             )
+            buy_or_hold_count_expr = func.coalesce(
+                func.sum(case((is_buy_or_hold, 1), else_=0)),
+                0,
+            )
             rows = session.execute(
                 select(
                     ConceptBoard.board_code,
@@ -1641,11 +1672,16 @@ class DatabaseManager:
                     ConceptBoard.stocks_count,
                     ConceptBoard.updated_at,
                     over_75_count_expr.label("volume_ge_75_count"),
+                    buy_or_hold_count_expr.label("buy_or_hold_count"),
                 )
                 .outerjoin(ConceptBoardStock, ConceptBoardStock.board_id == ConceptBoard.id)
                 .outerjoin(
                     latest_volume_score_subq,
                     latest_volume_score_subq.c.code == ConceptBoardStock.stock_code,
+                )
+                .outerjoin(
+                    latest_any_advice_subq,
+                    latest_any_advice_subq.c.code == ConceptBoardStock.stock_code,
                 )
                 .group_by(
                     ConceptBoard.id,
@@ -1655,7 +1691,7 @@ class DatabaseManager:
                     ConceptBoard.updated_at,
                 )
                 .order_by(
-                    desc(over_75_count_expr),
+                    desc(buy_or_hold_count_expr),
                     desc(ConceptBoard.stocks_count),
                     asc(ConceptBoard.board_name),
                 )
@@ -1667,6 +1703,7 @@ class DatabaseManager:
                     "board_name": str(r.board_name),
                     "stocks_count": int(r.stocks_count or 0),
                     "volume_ge_75_count": int(r.volume_ge_75_count or 0),
+                    "buy_or_hold_count": int(r.buy_or_hold_count or 0),
                     "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                 }
                 for r in rows
@@ -1773,7 +1810,18 @@ class DatabaseManager:
         *,
         limit: int = 32,
     ) -> List[Dict[str, Any]]:
-        codes = sorted({str(c or "").strip() for c in stock_codes if str(c or "").strip()})
+        # 兼容代码形态：600519 / SH600519 / sz000001 等。
+        # 概念导入默认写入 6 位数字代码，这里统一扩展候选集做匹配。
+        raw_codes = [str(c or "").strip() for c in stock_codes if str(c or "").strip()]
+        codes_set: set[str] = set()
+        for c in raw_codes:
+            up = c.upper()
+            codes_set.add(up)
+            if len(up) >= 6:
+                tail6 = up[-6:]
+                if re.fullmatch(r"\d{6}", tail6):
+                    codes_set.add(tail6)
+        codes = sorted(codes_set)
         if not codes:
             return []
         limit = max(1, min(int(limit or 32), 128))
@@ -1790,6 +1838,56 @@ class DatabaseManager:
                 .limit(limit)
             ).all()
             return [{"name": str(n), "count": int(c or 0)} for n, c in rows if n]
+
+    def get_concept_tags_by_codes(
+        self,
+        stock_codes: List[str],
+        *,
+        per_stock_limit: int = 12,
+    ) -> Dict[str, List[str]]:
+        """
+        按股票代码批量查询概念标签（板块名）。
+
+        返回结果的 key 使用传入代码原值，value 为去重后的板块名列表。
+        """
+        raw_codes = [str(c or "").strip() for c in stock_codes]
+        codes = [c for c in raw_codes if c]
+        if not codes:
+            return {}
+        per_stock_limit = max(1, min(int(per_stock_limit or 12), 50))
+
+        # 允许英文字母代码大小写不一致时仍能匹配到概念标签。
+        normalized_to_original: Dict[str, List[str]] = {}
+        for code in codes:
+            normalized_to_original.setdefault(code.upper(), []).append(code)
+        query_codes = sorted(set(codes) | set(normalized_to_original.keys()))
+
+        with self.get_session() as session:
+            rows = session.execute(
+                select(
+                    ConceptBoardStock.stock_code,
+                    ConceptBoard.board_name,
+                )
+                .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
+                .where(ConceptBoardStock.stock_code.in_(query_codes))
+                .order_by(asc(ConceptBoardStock.stock_code), asc(ConceptBoard.board_name))
+            ).all()
+
+        tmp: Dict[str, List[str]] = {code: [] for code in codes}
+        seen: Dict[str, set] = {code: set() for code in codes}
+        for stock_code, board_name in rows:
+            if not stock_code or not board_name:
+                continue
+            normalized_code = str(stock_code).strip().upper()
+            originals = normalized_to_original.get(normalized_code, [])
+            for original in originals:
+                if len(tmp[original]) >= per_stock_limit:
+                    continue
+                if board_name in seen[original]:
+                    continue
+                seen[original].add(board_name)
+                tmp[original].append(str(board_name))
+        return tmp
 
     def get_analysis_history_paginated(
         self,

@@ -19,6 +19,7 @@ export interface MarketScanItem {
   reportType?: string | null;
   sentimentScore?: number | null;
   operationAdvice?: string | null;
+  conceptTags?: string[];
   rankInBatch?: number | null;
   refChangePct?: number | null;
   refTradeVolume?: number | null;
