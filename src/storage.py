@@ -1832,23 +1832,35 @@ class DatabaseManager:
         if not codes:
             return []
         limit = max(1, min(int(limit or 32), 128))
+        # SQLite 默认变量上限常见为 999；预留余量避免 IN 绑定过多触发 OperationalError。
+        chunk_size = 800
+        board_counter: Dict[str, int] = {}
         with self.get_session() as session:
-            rows = session.execute(
-                select(
-                    ConceptBoard.board_name,
-                    func.count(ConceptBoardStock.id).label("cnt"),
-                )
-                .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
-                .where(ConceptBoardStock.stock_code.in_(codes))
-                .group_by(ConceptBoard.board_name)
-                .order_by(desc(func.count(ConceptBoardStock.id)), asc(ConceptBoard.board_name))
-                .limit(limit)
-            ).all()
-            out = [{"name": str(n), "count": int(c or 0)} for n, c in rows if n]
+            for i in range(0, len(codes), chunk_size):
+                chunk = codes[i:i + chunk_size]
+                rows = session.execute(
+                    select(
+                        ConceptBoard.board_name,
+                        func.count(ConceptBoardStock.id).label("cnt"),
+                    )
+                    .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
+                    .where(ConceptBoardStock.stock_code.in_(chunk))
+                    .group_by(ConceptBoard.board_name)
+                ).all()
+                for n, c in rows:
+                    if not n:
+                        continue
+                    board_counter[str(n)] = int(board_counter.get(str(n), 0) + int(c or 0))
+            out = [
+                {"name": name, "count": count}
+                for name, count in sorted(board_counter.items(), key=lambda x: (-x[1], x[0]))[:limit]
+            ]
             logger.info(
-                "concept_highlights result: rows=%d top5=%s",
+                "concept_highlights result: rows=%d top5=%s chunk_size=%d chunks=%d",
                 len(out),
                 out[:5],
+                chunk_size,
+                (len(codes) + chunk_size - 1) // chunk_size,
             )
             return out
 
@@ -1882,16 +1894,21 @@ class DatabaseManager:
             query_codes[:12],
         )
 
+        chunk_size = 800
+        rows: List[Tuple[Any, Any]] = []
         with self.get_session() as session:
-            rows = session.execute(
-                select(
-                    ConceptBoardStock.stock_code,
-                    ConceptBoard.board_name,
-                )
-                .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
-                .where(ConceptBoardStock.stock_code.in_(query_codes))
-                .order_by(asc(ConceptBoardStock.stock_code), asc(ConceptBoard.board_name))
-            ).all()
+            for i in range(0, len(query_codes), chunk_size):
+                chunk = query_codes[i:i + chunk_size]
+                chunk_rows = session.execute(
+                    select(
+                        ConceptBoardStock.stock_code,
+                        ConceptBoard.board_name,
+                    )
+                    .join(ConceptBoard, ConceptBoard.id == ConceptBoardStock.board_id)
+                    .where(ConceptBoardStock.stock_code.in_(chunk))
+                    .order_by(asc(ConceptBoardStock.stock_code), asc(ConceptBoard.board_name))
+                ).all()
+                rows.extend(chunk_rows)
 
         tmp: Dict[str, List[str]] = {code: [] for code in codes}
         seen: Dict[str, set] = {code: set() for code in codes}
@@ -1908,9 +1925,11 @@ class DatabaseManager:
                 seen[original].add(board_name)
                 tmp[original].append(str(board_name))
         logger.info(
-            "concept_tags result: stocks_with_tags=%d sample=%s",
+            "concept_tags result: stocks_with_tags=%d sample=%s chunk_size=%d chunks=%d",
             sum(1 for _, v in tmp.items() if v),
             {k: v[:3] for k, v in list(tmp.items())[:5]},
+            chunk_size,
+            (len(query_codes) + chunk_size - 1) // chunk_size,
         )
         return tmp
 
