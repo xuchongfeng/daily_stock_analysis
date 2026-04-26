@@ -22,6 +22,7 @@ export * from './JsonViewer';
 export * from './Select';
 export * from './Badge';
 export * from './SignalBadges';
+export * from './ScoreHistoryHoverBadge';
 export * from './StatusDot';
 export * from './Tooltip';
 export * from './Pagination';

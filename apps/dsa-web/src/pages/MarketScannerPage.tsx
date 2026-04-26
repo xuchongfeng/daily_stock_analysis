@@ -13,7 +13,7 @@ import {
   Card,
   EmptyState,
   Pagination,
-  ScoreBadge,
+  ScoreHistoryHoverBadge,
   Select,
 } from '../components/common';
 import { ReportMarkdown } from '../components/report/ReportMarkdown';
@@ -536,7 +536,7 @@ const MarketScannerPage: React.FC = () => {
                           )}
                         </td>
                         <td className="px-3 py-2">
-                          <ScoreBadge score={row.sentimentScore} />
+                          <ScoreHistoryHoverBadge stockCode={row.stockCode} score={row.sentimentScore} />
                         </td>
                         <td className="px-3 py-2 text-xs">
                           <AdviceBadge advice={row.operationAdvice} />

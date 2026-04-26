@@ -7,7 +7,7 @@ import { portfolioApi } from '../api/portfolio';
 import type { ParsedApiError } from '../api/error';
 import { getParsedApiError } from '../api/error';
 import { pollAnalysisTask } from '../utils/analysisTaskPoll';
-import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert, ScoreBadge, AdviceBadge } from '../components/common';
+import { ApiErrorAlert, Card, Badge, ConfirmDialog, EmptyState, InlineAlert, ScoreHistoryHoverBadge, AdviceBadge } from '../components/common';
 import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 import { toDateInputValue } from '../utils/format';
 import type {
@@ -1300,7 +1300,11 @@ const PortfolioPage: React.FC = () => {
                     <td className="py-2 pr-2 font-mono text-foreground">{row.symbol}</td>
                     <td className="py-2 pr-2 text-secondary">{row.stockName ?? '—'}</td>
                     <td className="py-2 pr-2 text-right">
-                      {row.status === 'completed' ? <ScoreBadge score={row.sentimentScore} /> : '—'}
+                      {row.status === 'completed' ? (
+                        <ScoreHistoryHoverBadge stockCode={row.symbol} score={row.sentimentScore} />
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className="py-2 pr-2 text-xs text-foreground">
                       {row.status === 'completed' ? <AdviceBadge advice={row.operationAdvice} /> : '—'}

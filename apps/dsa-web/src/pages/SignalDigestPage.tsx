@@ -23,7 +23,7 @@ import {
   Card,
   EmptyState,
   InlineAlert,
-  ScoreBadge,
+  ScoreHistoryHoverBadge,
 } from '../components/common';
 import { cn } from '../utils/cn';
 import type { SignalDigestPick, SignalDigestResponse } from '../types/signalDigest';
@@ -88,7 +88,7 @@ function TagCloud({
 }
 
 const SignalDigestPickRow: React.FC<{ pick: SignalDigestPick; index: number }> = ({ pick: p, index }) => {
-  const trRef = useRef<HTMLTableRowElement>(null);
+  const adviceCellRef = useRef<HTMLTableCellElement>(null);
   const [tipOpen, setTipOpen] = useState(false);
   const [tipPos, setTipPos] = useState({ top: 0, left: 0, width: 320 });
   const hoverTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
@@ -101,7 +101,7 @@ const SignalDigestPickRow: React.FC<{ pick: SignalDigestPick; index: number }> =
   }, []);
 
   const syncTipPosition = useCallback(() => {
-    const el = trRef.current;
+    const el = adviceCellRef.current;
     if (!el) {
       return;
     }
@@ -167,24 +167,25 @@ const SignalDigestPickRow: React.FC<{ pick: SignalDigestPick; index: number }> =
   return (
     <>
       <tr
-        ref={trRef}
         className={cn(
           'border-b border-border/40 transition-colors last:border-0',
           'hover:bg-hover/40',
           index % 2 === 1 && 'bg-hover/10',
-          hasExcerpt && 'cursor-help',
         )}
-        onMouseEnter={handleRowEnter}
-        onMouseLeave={handleRowLeave}
       >
         <td className="px-3 py-2.5 pl-4 font-mono text-xs tabular-nums text-secondary-text sm:px-4">{p.code}</td>
         <td className="px-3 py-2.5 text-foreground sm:px-4">{nameCell(p.code, p.name)}</td>
         <td className="px-3 py-2.5 tabular-nums text-foreground sm:px-4">{p.score.toFixed(1)}</td>
         <td className="px-3 py-2.5 tabular-nums text-secondary-text sm:px-4">{p.appearanceCount}</td>
         <td className="px-3 py-2.5 sm:px-4">
-          <ScoreBadge score={p.sentimentScore} />
+          <ScoreHistoryHoverBadge stockCode={p.code} score={p.sentimentScore} />
         </td>
-        <td className="px-3 py-2.5 sm:px-4">
+        <td
+          ref={adviceCellRef}
+          className={cn('px-3 py-2.5 sm:px-4', hasExcerpt && 'cursor-help')}
+          onMouseEnter={handleRowEnter}
+          onMouseLeave={handleRowLeave}
+        >
           <AdviceBadge advice={p.operationAdvice} />
         </td>
         <td className="max-w-[14rem] truncate px-3 py-2.5 text-xs text-secondary-text sm:max-w-none sm:px-4">

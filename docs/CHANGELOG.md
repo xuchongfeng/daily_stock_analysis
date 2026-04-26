@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [改进] Web 浅色主题对比度优化（参考高信息密度股票站风格）：提升文字/边框/悬浮与输入控件对比；新增统一 `ui-tab-pill` 与 `ui-option-chip` 高对比样式并应用于榜单扫描与评分历史；信号摘要标签与状态条强化可读性，设置分类激活态对比提升。
+- [新功能] Web「信号摘要 / 概念板块 / 持仓管理 / 榜单扫描」页面评分支持悬停 1 秒查看近 14 天评分历史（按日最新、自动缓存短期结果）。
 - [改进] Web「信号摘要」页布局与视觉：主内容区改为纵向四行（个股 / 板块 / 概念 / AI 叙事）全宽流式；页头/筛选/窗口指标条；板块与概念行内为「全量 | Top」两卡并排（md 起）；表格斑马纹与悬停、空状态区分板块与概念。
 - [新功能] 新增概念板块数据链路：`scripts/init_concept_boards.py <json_path>` 可从外部 JSON 初始化 `concept_boards` / `concept_board_stocks`；保留个股 `tag_industry` 与 `tag_concept` 标签。
 - [新功能] 新增概念板块 API：`GET /api/v1/concept-boards`、`GET /api/v1/concept-boards/{board_code}/stocks`；板块个股按最近一次 AI 评分排序，未评分排末尾。

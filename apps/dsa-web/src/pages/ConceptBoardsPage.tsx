@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { conceptBoardsApi } from '../api/conceptBoards';
 import { getParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
-import { AdviceBadge, ApiErrorAlert, Button, Card, EmptyState, ScoreBadge } from '../components/common';
+import { AdviceBadge, ApiErrorAlert, Button, Card, EmptyState, ScoreHistoryHoverBadge } from '../components/common';
 import { AddToWatchlistButton } from '../components/watchlist/AddToWatchlistButton';
 import type { ConceptBoardItem, ConceptBoardStockItem } from '../types/conceptBoard';
 import { xueqiuStockHref } from '../utils/xueqiu';
@@ -197,7 +197,7 @@ const ConceptBoardsPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-2 tabular-nums text-secondary-text">
-                      {s.sentimentScore != null ? <ScoreBadge score={s.sentimentScore} /> : '—'}
+                      <ScoreHistoryHoverBadge stockCode={s.stockCode} score={s.sentimentScore} />
                     </td>
                     <td className="min-w-[10rem] px-4 py-2 text-secondary-text">
                       {s.operationAdvice ? <AdviceBadge advice={s.operationAdvice} /> : '—'}
