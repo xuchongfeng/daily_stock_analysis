@@ -7,6 +7,7 @@
 
 export interface BacktestRunRequest {
   code?: string;
+  selectionRule?: 'signal_digest_top30_14d';
   force?: boolean;
   evalWindowDays?: number;
   minAgeDays?: number;

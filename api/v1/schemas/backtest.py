@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 
 class BacktestRunRequest(BaseModel):
     code: Optional[str] = Field(None, description="仅回测指定股票")
+    selection_rule: Optional[str] = Field(
+        None,
+        description="选股规则：signal_digest_top30_14d（近14交易日信号摘要Top30）",
+    )
     force: bool = Field(False, description="强制重新计算")
     eval_window_days: Optional[int] = Field(None, ge=1, le=120, description="评估窗口（交易日数）")
     min_age_days: Optional[int] = Field(None, ge=0, le=365, description="分析记录最小天龄（0=不限）")

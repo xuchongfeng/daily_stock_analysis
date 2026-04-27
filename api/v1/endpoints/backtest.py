@@ -58,6 +58,7 @@ def run_backtest(
         service = BacktestService(db_manager)
         stats = service.run_backtest(
             code=request.code,
+            selection_rule=request.selection_rule,
             force=request.force,
             eval_window_days=request.eval_window_days,
             min_age_days=request.min_age_days,

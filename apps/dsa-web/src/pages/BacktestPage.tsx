@@ -167,6 +167,7 @@ const BacktestPage: React.FC = () => {
 
   // Input state
   const [codeFilter, setCodeFilter] = useState('');
+  const [selectionRule, setSelectionRule] = useState<'' | 'signal_digest_top30_14d'>('');
   const [analysisDateFrom, setAnalysisDateFrom] = useState('');
   const [analysisDateTo, setAnalysisDateTo] = useState('');
   const [evalDays, setEvalDays] = useState('');
@@ -282,6 +283,7 @@ const BacktestPage: React.FC = () => {
       const evalWindowDays = evalDays ? parseInt(evalDays, 10) : undefined;
       const response = await backtestApi.run({
         code,
+        selectionRule: !code ? (selectionRule || undefined) : undefined,
         force: forceRerun || undefined,
         minAgeDays: forceRerun ? 0 : undefined,
         evalWindowDays,
@@ -342,6 +344,19 @@ const BacktestPage: React.FC = () => {
               disabled={isRunning}
               className={BACKTEST_INPUT_CLASS}
             />
+          </div>
+          <div className="flex items-center gap-2 whitespace-nowrap lg:w-72 lg:justify-between">
+            <span className="text-xs text-muted-text">Rule</span>
+            <select
+              aria-label="Backtest stock selection rule"
+              value={selectionRule}
+              onChange={(e) => setSelectionRule(e.target.value as '' | 'signal_digest_top30_14d')}
+              disabled={isRunning || Boolean(codeFilter.trim())}
+              className={`${BACKTEST_COMPACT_INPUT_CLASS} w-56`}
+            >
+              <option value="">None</option>
+              <option value="signal_digest_top30_14d">Signal Digest 14D Top30</option>
+            </select>
           </div>
           <button
             type="button"

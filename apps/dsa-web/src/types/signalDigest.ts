@@ -49,3 +49,7 @@ export type SignalDigestResponse = {
   fromCache?: boolean;
   cacheExpiresAt?: string | null;
 };
+
+export type SignalDigestSnapshotDatesResponse = {
+  items: string[];
+};

@@ -33,6 +33,7 @@ class BacktestService:
         self,
         *,
         code: Optional[str] = None,
+        selection_rule: Optional[str] = None,
         force: bool = False,
         eval_window_days: Optional[int] = None,
         min_age_days: Optional[int] = None,
@@ -54,8 +55,16 @@ class BacktestService:
             engine_version=str(engine_version),
         )
 
+        selected_codes: Optional[List[str]] = None
+        rule = (selection_rule or "").strip().lower()
+        if not code and rule:
+            selected_codes = self._resolve_selection_rule_codes(rule)
+            if not selected_codes:
+                logger.warning("回测选股规则未选出标的: rule=%s", rule)
+
         candidates = self.repo.get_candidates(
             code=code,
+            codes=selected_codes,
             min_age_days=int(min_age_days),
             limit=int(limit),
             eval_window_days=int(eval_window_days),
@@ -212,6 +221,35 @@ class BacktestService:
             "insufficient": insufficient,
             "errors": errors,
         }
+
+    def _resolve_selection_rule_codes(self, rule: str) -> List[str]:
+        if rule == "signal_digest_top30_14d":
+            try:
+                from src.services.signal_digest_service import build_signal_digest
+
+                digest = build_signal_digest(
+                    self.db,
+                    trading_sessions=14,
+                    top_k=30,
+                    market_filter="cn",
+                    batch_only=True,
+                    advice_filter="buy_or_hold",
+                    with_narrative=False,
+                )
+                picks = digest.get("picks") or []
+                codes: List[str] = []
+                seen: set[str] = set()
+                for p in picks:
+                    c = str((p or {}).get("code") or "").strip()
+                    if not c or c in seen:
+                        continue
+                    seen.add(c)
+                    codes.append(c)
+                return codes[:30]
+            except Exception as exc:
+                logger.warning("解析回测选股规则失败: rule=%s err=%s", rule, exc)
+                return []
+        raise ValueError(f"unsupported selection_rule: {rule}")
 
     def get_recent_evaluations(
         self,

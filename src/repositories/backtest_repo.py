@@ -28,6 +28,7 @@ class BacktestRepository:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]],
         min_age_days: int,
         limit: int,
         eval_window_days: int,
@@ -41,6 +42,8 @@ class BacktestRepository:
             conditions = [AnalysisHistory.created_at <= cutoff_dt]
             if code:
                 conditions.append(AnalysisHistory.code == code)
+            elif codes:
+                conditions.append(AnalysisHistory.code.in_(codes))
 
             query = select(AnalysisHistory).where(and_(*conditions))
 

@@ -272,33 +272,40 @@ const SignalDigestPage: React.FC = () => {
   const [loadError, setLoadError] = useState<ParsedApiError | null>(null);
   const [loading, setLoading] = useState(true);
   const [tradingSessions, setTradingSessions] = useState(14);
-  const [topK, setTopK] = useState(10);
+  const [topK, setTopK] = useState(100);
   const [market, setMarket] = useState<'cn' | 'hk' | 'us' | 'all'>('cn');
   const [recordScope, setRecordScope] = useState<'batch' | 'all' | 'manual'>('batch');
   const [adviceFilter, setAdviceFilter] = useState<'any' | 'buy_or_hold'>('buy_or_hold');
   const [withNarrative, setWithNarrative] = useState(true);
+  const [snapshotDate, setSnapshotDate] = useState('');
+  const [snapshotDates, setSnapshotDates] = useState<string[]>([]);
 
   const load = useCallback(async (opts?: { refresh?: boolean }) => {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await signalDigestApi.get({
+      const commonParams = {
         tradingSessions,
         topK,
         market,
         batchOnly: recordScope === 'batch',
         excludeBatch: recordScope === 'manual',
         adviceFilter,
-        withNarrative,
-        refresh: opts?.refresh === true,
-      });
+      };
+      const res = snapshotDate
+        ? await signalDigestApi.getSnapshot(snapshotDate, commonParams)
+        : await signalDigestApi.get({
+            ...commonParams,
+            withNarrative,
+            refresh: opts?.refresh === true,
+          });
       setData(res);
     } catch (e) {
       setLoadError(getParsedApiError(e));
     } finally {
       setLoading(false);
     }
-  }, [tradingSessions, topK, market, recordScope, adviceFilter, withNarrative]);
+  }, [tradingSessions, topK, market, recordScope, adviceFilter, withNarrative, snapshotDate]);
 
   useEffect(() => {
     document.title = '信号摘要 - DSA';
@@ -307,6 +314,32 @@ const SignalDigestPage: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const commonParams = {
+          tradingSessions,
+          topK,
+          market,
+          batchOnly: recordScope === 'batch',
+          excludeBatch: recordScope === 'manual',
+          adviceFilter,
+        };
+        const r = await signalDigestApi.listSnapshotDates(commonParams);
+        setSnapshotDates(r.items || []);
+      } catch {
+        setSnapshotDates([]);
+      }
+    };
+    void run();
+  }, [tradingSessions, topK, market, recordScope, adviceFilter]);
+
+  useEffect(() => {
+    if (snapshotDate && !snapshotDates.includes(snapshotDate)) {
+      setSnapshotDate('');
+    }
+  }, [snapshotDate, snapshotDates]);
 
   const handleRefresh = useCallback(() => {
     void load({ refresh: true });
@@ -365,7 +398,7 @@ const SignalDigestPage: React.FC = () => {
                 value={tradingSessions}
                 onChange={(e) => setTradingSessions(Number(e.target.value))}
               >
-                {[7, 10, 14, 20, 30, 45, 60].map((n) => (
+                {[14, 30, 60].map((n) => (
                   <option key={n} value={n}>
                     {n} 日
                   </option>
@@ -375,7 +408,7 @@ const SignalDigestPage: React.FC = () => {
             <label className="flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-wider text-secondary-text/90">
               Top K
               <select className={CONTROL_CLASS} value={topK} onChange={(e) => setTopK(Number(e.target.value))}>
-                {[5, 8, 10, 12, 15, 20, 30].map((n) => (
+                {[100].map((n) => (
                   <option key={n} value={n}>
                     {n}
                   </option>
@@ -418,6 +451,21 @@ const SignalDigestPage: React.FC = () => {
                 <option value="any">全部建议</option>
               </select>
             </label>
+            <label className="col-span-2 flex flex-col gap-1.5 text-[11px] font-medium uppercase tracking-wider text-secondary-text/90 sm:col-span-2 lg:col-span-2">
+              历史日期（查看已持久化排名）
+              <select
+                className={CONTROL_CLASS}
+                value={snapshotDate}
+                onChange={(e) => setSnapshotDate(e.target.value)}
+              >
+                <option value="">实时（当前窗口）</option>
+                {snapshotDates.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+            </label>
             <div className="col-span-2 flex flex-col justify-end sm:col-span-3 lg:col-span-1">
               <label className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border/50 bg-hover/20 px-3 py-2.5 text-sm text-foreground transition-colors hover:border-border hover:bg-hover/35">
                 <input
@@ -425,6 +473,7 @@ const SignalDigestPage: React.FC = () => {
                   className="h-4 w-4 rounded border-border text-[hsl(var(--primary))] focus:ring-[hsl(var(--primary))]/30"
                   checked={withNarrative}
                   onChange={(e) => setWithNarrative(e.target.checked)}
+                  disabled={Boolean(snapshotDate)}
                 />
                 <span className="text-[13px]">生成 AI 叙事</span>
               </label>

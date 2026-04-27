@@ -343,6 +343,52 @@ class SignalDigestCache(Base):
     expires_at = Column(DateTime, nullable=False, index=True)
 
 
+class SignalDigestSnapshot(Base):
+    """
+    信号摘要每日快照（持久化）。
+
+    与短期缓存 `signal_digest_cache` 不同，该表用于保留可回溯的每日 Top 列表。
+    """
+
+    __tablename__ = "signal_digest_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    snapshot_date = Column(Date, nullable=False, index=True)
+    trading_sessions = Column(Integer, nullable=False)
+    top_k = Column(Integer, nullable=False)
+    market_filter = Column(String(16), nullable=False, default="cn")
+    exclude_batch = Column(Boolean, nullable=False, default=False)
+    batch_only = Column(Boolean, nullable=False, default=False)
+    advice_filter = Column(String(32), nullable=False, default="any")
+    payload_json = Column(Text, nullable=False)
+    picks_json = Column(Text, nullable=False)
+    concept_highlights_json = Column(Text, nullable=False)
+    concept_highlights_all_json = Column(Text, nullable=False)
+    board_highlights_json = Column(Text, nullable=False)
+    board_highlights_all_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "snapshot_date",
+            "trading_sessions",
+            "top_k",
+            "market_filter",
+            "exclude_batch",
+            "batch_only",
+            "advice_filter",
+            name="uix_signal_digest_snapshot_rule",
+        ),
+        Index(
+            "ix_signal_digest_snapshot_lookup",
+            "snapshot_date",
+            "trading_sessions",
+            "top_k",
+        ),
+    )
+
+
 class BacktestResult(Base):
     """单条分析记录的回测结果。"""
 
@@ -761,9 +807,19 @@ class DatabaseManager:
             )
 
             # 创建所有表
-            Base.metadata.create_all(self._engine)
+            # SQLite 在并发初始化时，checkfirst 与 CREATE TABLE 之间仍可能出现
+            # 轻微竞争，触发 "table ... already exists"；该场景可安全忽略。
+            try:
+                Base.metadata.create_all(self._engine)
+            except OperationalError as exc:
+                err_text = str(getattr(exc, "orig", exc)).lower()
+                if self._is_sqlite_engine and "already exists" in err_text:
+                    logger.warning("SQLite create_all 并发建表竞争，已忽略: %s", exc)
+                else:
+                    raise
 
             self._ensure_sqlite_analysis_history_top_movers_columns()
+            self._ensure_sqlite_signal_digest_snapshot_columns()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -886,6 +942,31 @@ class DatabaseManager:
                 )
         except Exception as exc:
             logger.warning("补齐 analysis_history 榜单扫描字段失败（可忽略若已最新）: %s", exc)
+
+    def _ensure_sqlite_signal_digest_snapshot_columns(self) -> None:
+        """为已有 SQLite 库补齐 signal_digest_snapshots 字段（create_all 不会 ALTER）。"""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(signal_digest_snapshots)")).fetchall()
+            if not rows:
+                return
+            existing = {r[1] for r in rows}
+            if "payload_json" not in existing:
+                with self._engine.begin() as conn:
+                    conn.execute(
+                        text("ALTER TABLE signal_digest_snapshots ADD COLUMN payload_json TEXT")
+                    )
+                    conn.execute(
+                        text(
+                            "UPDATE signal_digest_snapshots SET payload_json='{}' "
+                            "WHERE payload_json IS NULL"
+                        )
+                    )
+                logger.info("SQLite signal_digest_snapshots 已补齐字段: payload_json")
+        except Exception as exc:
+            logger.warning("补齐 signal_digest_snapshots 字段失败（可忽略若已最新）: %s", exc)
 
     def _run_write_transaction(
         self,
@@ -1506,6 +1587,144 @@ class DatabaseManager:
             f"signal_digest_cache[{cache_key[:12]}]",
             _write,
         )
+
+    def upsert_signal_digest_snapshot(
+        self,
+        *,
+        snapshot_date: date,
+        trading_sessions: int,
+        top_k: int,
+        market_filter: str,
+        exclude_batch: bool,
+        batch_only: bool,
+        advice_filter: str,
+        payload: Dict[str, Any],
+    ) -> int:
+        """
+        覆盖写入每日信号摘要快照（同规则同日唯一）。
+        """
+        payload_json = json.dumps(payload or {}, ensure_ascii=False)
+        picks_json = json.dumps(payload.get("picks") or [], ensure_ascii=False)
+        concept_highlights_json = json.dumps(payload.get("concept_highlights") or [], ensure_ascii=False)
+        concept_highlights_all_json = json.dumps(payload.get("concept_highlights_all") or [], ensure_ascii=False)
+        board_highlights_json = json.dumps(payload.get("board_highlights") or [], ensure_ascii=False)
+        board_highlights_all_json = json.dumps(payload.get("board_highlights_all") or [], ensure_ascii=False)
+        now = datetime.now()
+
+        def _write(session: Session) -> int:
+            existing = session.execute(
+                select(SignalDigestSnapshot).where(
+                    and_(
+                        SignalDigestSnapshot.snapshot_date == snapshot_date,
+                        SignalDigestSnapshot.trading_sessions == int(trading_sessions),
+                        SignalDigestSnapshot.top_k == int(top_k),
+                        SignalDigestSnapshot.market_filter == str(market_filter),
+                        SignalDigestSnapshot.exclude_batch == bool(exclude_batch),
+                        SignalDigestSnapshot.batch_only == bool(batch_only),
+                        SignalDigestSnapshot.advice_filter == str(advice_filter),
+                    )
+                ).limit(1)
+            ).scalar_one_or_none()
+            if existing is None:
+                row = SignalDigestSnapshot(
+                    snapshot_date=snapshot_date,
+                    trading_sessions=int(trading_sessions),
+                    top_k=int(top_k),
+                    market_filter=str(market_filter),
+                    exclude_batch=bool(exclude_batch),
+                    batch_only=bool(batch_only),
+                    advice_filter=str(advice_filter),
+                    payload_json=payload_json,
+                    picks_json=picks_json,
+                    concept_highlights_json=concept_highlights_json,
+                    concept_highlights_all_json=concept_highlights_all_json,
+                    board_highlights_json=board_highlights_json,
+                    board_highlights_all_json=board_highlights_all_json,
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(row)
+                session.flush()
+                return int(row.id or 0)
+
+            existing.picks_json = picks_json
+            existing.payload_json = payload_json
+            existing.concept_highlights_json = concept_highlights_json
+            existing.concept_highlights_all_json = concept_highlights_all_json
+            existing.board_highlights_json = board_highlights_json
+            existing.board_highlights_all_json = board_highlights_all_json
+            existing.updated_at = now
+            session.add(existing)
+            session.flush()
+            return int(existing.id or 0)
+
+        return self._run_write_transaction(
+            f"signal_digest_snapshot[{snapshot_date.isoformat()}|{trading_sessions}|{top_k}]",
+            _write,
+        )
+
+    def get_signal_digest_snapshot_payload(
+        self,
+        *,
+        snapshot_date: date,
+        trading_sessions: int,
+        top_k: int,
+        market_filter: str,
+        exclude_batch: bool,
+        batch_only: bool,
+        advice_filter: str,
+    ) -> Optional[Dict[str, Any]]:
+        with self.get_session() as session:
+            row = session.execute(
+                select(SignalDigestSnapshot).where(
+                    and_(
+                        SignalDigestSnapshot.snapshot_date == snapshot_date,
+                        SignalDigestSnapshot.trading_sessions == int(trading_sessions),
+                        SignalDigestSnapshot.top_k == int(top_k),
+                        SignalDigestSnapshot.market_filter == str(market_filter),
+                        SignalDigestSnapshot.exclude_batch == bool(exclude_batch),
+                        SignalDigestSnapshot.batch_only == bool(batch_only),
+                        SignalDigestSnapshot.advice_filter == str(advice_filter),
+                    )
+                ).limit(1)
+            ).scalar_one_or_none()
+            if row is None:
+                return None
+            try:
+                payload = json.loads(row.payload_json or "{}")
+            except (json.JSONDecodeError, TypeError):
+                return None
+            if not isinstance(payload, dict):
+                return None
+            payload["from_cache"] = False
+            payload["cache_expires_at"] = None
+            return payload
+
+    def list_signal_digest_snapshot_dates(
+        self,
+        *,
+        trading_sessions: int,
+        top_k: int,
+        market_filter: str,
+        exclude_batch: bool,
+        batch_only: bool,
+        advice_filter: str,
+        limit: int = 120,
+    ) -> List[str]:
+        with self.get_session() as session:
+            rows = session.execute(
+                select(SignalDigestSnapshot.snapshot_date).where(
+                    and_(
+                        SignalDigestSnapshot.trading_sessions == int(trading_sessions),
+                        SignalDigestSnapshot.top_k == int(top_k),
+                        SignalDigestSnapshot.market_filter == str(market_filter),
+                        SignalDigestSnapshot.exclude_batch == bool(exclude_batch),
+                        SignalDigestSnapshot.batch_only == bool(batch_only),
+                        SignalDigestSnapshot.advice_filter == str(advice_filter),
+                    )
+                ).order_by(desc(SignalDigestSnapshot.snapshot_date)).limit(max(1, min(int(limit), 500)))
+            ).all()
+            return [r[0].isoformat() for r in rows if r and r[0] is not None]
 
     def replace_concept_boards(
         self,

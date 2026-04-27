@@ -1,6 +1,6 @@
 import apiClient from './index';
 import { toCamelCase } from './utils';
-import type { SignalDigestResponse } from '../types/signalDigest';
+import type { SignalDigestResponse, SignalDigestSnapshotDatesResponse } from '../types/signalDigest';
 
 const BASE = '/api/v1/insights/signal-digest';
 
@@ -43,5 +43,53 @@ export const signalDigestApi = {
       },
     });
     return toCamelCase<SignalDigestResponse>(response.data);
+  },
+  getSnapshot: async (
+    snapshotDate: string,
+    params: Omit<SignalDigestQuery, 'refresh' | 'useCache' | 'withNarrative'> = {},
+  ): Promise<SignalDigestResponse> => {
+    const {
+      tradingSessions = 14,
+      topK = 100,
+      market = 'cn',
+      excludeBatch = false,
+      batchOnly = true,
+      adviceFilter = 'buy_or_hold',
+    } = params;
+    const response = await apiClient.get<Record<string, unknown>>(`${BASE}/snapshots`, {
+      params: {
+        snapshot_date: snapshotDate,
+        trading_sessions: tradingSessions,
+        top_k: topK,
+        market,
+        exclude_batch: excludeBatch,
+        batch_only: batchOnly,
+        advice_filter: adviceFilter,
+      },
+    });
+    return toCamelCase<SignalDigestResponse>(response.data);
+  },
+  listSnapshotDates: async (
+    params: Omit<SignalDigestQuery, 'refresh' | 'useCache' | 'withNarrative'> = {},
+  ): Promise<SignalDigestSnapshotDatesResponse> => {
+    const {
+      tradingSessions = 14,
+      topK = 100,
+      market = 'cn',
+      excludeBatch = false,
+      batchOnly = true,
+      adviceFilter = 'buy_or_hold',
+    } = params;
+    const response = await apiClient.get<Record<string, unknown>>(`${BASE}/snapshot-dates`, {
+      params: {
+        trading_sessions: tradingSessions,
+        top_k: topK,
+        market,
+        exclude_batch: excludeBatch,
+        batch_only: batchOnly,
+        advice_filter: adviceFilter,
+      },
+    });
+    return toCamelCase<SignalDigestSnapshotDatesResponse>(response.data);
   },
 };

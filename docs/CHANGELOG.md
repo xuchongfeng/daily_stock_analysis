@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [改进] Web 浅色主题对比度优化（参考高信息密度股票站风格）：提升文字/边框/悬浮与输入控件对比；新增统一 `ui-tab-pill` 与 `ui-option-chip` 高对比样式并应用于榜单扫描与评分历史；信号摘要标签与状态条强化可读性，设置分类激活态对比提升。
 - [新功能] Web「信号摘要 / 概念板块 / 持仓管理 / 榜单扫描」页面评分支持悬停 1 秒查看近 14 天评分历史（按日最新、自动缓存短期结果）。
+- [新功能] 回测新增选股规则 `signal_digest_top30_14d`：按「信号摘要」口径选取近 14 个交易日 Top30 标的批量回测；Web 回测页新增 Rule 下拉可直接触发。
+- [改进] 信号摘要页筛选项优化：交易日窗口固定为 14/30/60；Top K 选项提升为 100，并同步放宽后端 `top_k` 上限与聚合截断。
+- [新功能] 新增信号摘要每日快照持久化表 `signal_digest_snapshots`：在 `refresh=true` 且规则为 14/Top100 或 30/Top100 时，覆盖更新当日个股列表与概念/板块排序列表（用于后续回测与追溯）。
+- [新功能] 新增历史快照初始化脚本 `scripts/init_signal_digest_snapshots.py` 与信号摘要快照查询接口：支持按日期范围回填 14/Top100、30/Top100；Web 信号摘要页新增历史日期筛选，可查看历史排名。
 - [改进] Web「信号摘要」页布局与视觉：主内容区改为纵向四行（个股 / 板块 / 概念 / AI 叙事）全宽流式；页头/筛选/窗口指标条；板块与概念行内为「全量 | Top」两卡并排（md 起）；表格斑马纹与悬停、空状态区分板块与概念。
 - [新功能] 新增概念板块数据链路：`scripts/init_concept_boards.py <json_path>` 可从外部 JSON 初始化 `concept_boards` / `concept_board_stocks`；保留个股 `tag_industry` 与 `tag_concept` 标签。
 - [新功能] 新增概念板块 API：`GET /api/v1/concept-boards`、`GET /api/v1/concept-boards/{board_code}/stocks`；板块个股按最近一次 AI 评分排序，未评分排末尾。

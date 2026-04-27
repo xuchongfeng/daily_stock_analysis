@@ -17,6 +17,7 @@ export const backtestApi = {
   run: async (params: BacktestRunRequest = {}): Promise<BacktestRunResponse> => {
     const requestData: Record<string, unknown> = {};
     if (params.code) requestData.code = params.code;
+    if (params.selectionRule) requestData.selection_rule = params.selectionRule;
     if (params.force) requestData.force = params.force;
     if (params.evalWindowDays) requestData.eval_window_days = params.evalWindowDays;
     if (params.minAgeDays != null) requestData.min_age_days = params.minAgeDays;

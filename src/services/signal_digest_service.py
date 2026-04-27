@@ -13,7 +13,7 @@ import json
 import logging
 import re
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.analyzer import GeminiAnalyzer
@@ -207,9 +207,10 @@ def build_signal_digest(
     batch_only: bool = False,
     advice_filter: str = "any",
     with_narrative: bool = True,
+    anchor_date_override: Optional[date] = None,
 ) -> Dict[str, Any]:
     cal_mkt = _calendar_market_for_filter(market_filter)
-    anchor_date = get_effective_trading_date(cal_mkt)
+    anchor_date = anchor_date_override or get_effective_trading_date(cal_mkt)
     oldest_date = get_oldest_date_in_trading_window(cal_mkt, trading_sessions, anchor_date)
     since = datetime.combine(oldest_date, datetime.min.time())
 
@@ -263,7 +264,7 @@ def build_signal_digest(
             if name:
                 board_counter_all[str(name)] += 1
 
-    top = picks_raw[: max(1, min(int(top_k), 50))]
+    top = picks_raw[: max(1, min(int(top_k), 100))]
 
     picks_out: List[Dict[str, Any]] = []
     board_counter_top: Counter[str] = Counter()

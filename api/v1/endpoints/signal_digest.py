@@ -4,14 +4,20 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
 from api.deps import get_database_manager
 from api.v1.schemas.common import ErrorResponse
-from api.v1.schemas.signal_digest import SignalDigestResponse
+from api.v1.schemas.signal_digest import (
+    SignalDigestResponse,
+    SignalDigestSnapshotDatesResponse,
+    SignalDigestSnapshotInitRequest,
+    SignalDigestSnapshotInitResponse,
+)
 from src.config import get_config
+from src.core.trading_calendar import is_market_open
 from src.services.signal_digest_service import (
     build_signal_digest,
     compute_signal_digest_cache_key,
@@ -49,7 +55,7 @@ def get_signal_digest(
         le=60,
         description="交易日窗口长度（含锚定日）",
     ),
-    top_k: int = Query(10, ge=3, le=30, description="返回的标的数量上限"),
+    top_k: int = Query(10, ge=3, le=100, description="返回的标的数量上限"),
     market: str = Query(
         "cn",
         pattern="^(cn|hk|us|all)$",
@@ -128,6 +134,26 @@ def get_signal_digest(
         logger.exception("signal_digest failed: %s", exc)
         raise HTTPException(status_code=500, detail="signal_digest_failed") from exc
 
+    # 每次 refresh 时覆盖写入可回溯快照（当前仅保留 14/100、30/100 两档）。
+    if refresh and top_k == 100 and trading_sessions in (14, 30):
+        try:
+            window = payload.get("window") or {}
+            anchor_date = window.get("anchor_date")
+            if anchor_date:
+                snap_date = datetime.fromisoformat(str(anchor_date)).date()
+                db_manager.upsert_signal_digest_snapshot(
+                    snapshot_date=snap_date,
+                    trading_sessions=trading_sessions,
+                    top_k=top_k,
+                    market_filter=market,
+                    exclude_batch=exclude_batch,
+                    batch_only=batch_only,
+                    advice_filter=advice_filter,
+                    payload=payload,
+                )
+        except Exception as exc:
+            logger.warning("signal_digest snapshot write skipped: %s", exc)
+
     expires_iso: str | None = None
     if ttl > 0 and use_cache and cache_key is not None:
         try:
@@ -145,3 +171,114 @@ def get_signal_digest(
         "cache_expires_at": expires_iso,
     }
     return SignalDigestResponse.model_validate(merged)
+
+
+@router.get(
+    "/snapshots",
+    response_model=SignalDigestResponse,
+    summary="读取信号摘要历史快照",
+)
+def get_signal_digest_snapshot(
+    snapshot_date: date = Query(..., description="快照日期 YYYY-MM-DD"),
+    trading_sessions: int = Query(14, ge=3, le=60),
+    top_k: int = Query(100, ge=3, le=100),
+    market: str = Query("cn", pattern="^(cn|hk|us|all)$"),
+    exclude_batch: bool = Query(False),
+    batch_only: bool = Query(True),
+    advice_filter: str = Query("buy_or_hold", pattern="^(any|buy_or_hold)$"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> SignalDigestResponse:
+    payload = db_manager.get_signal_digest_snapshot_payload(
+        snapshot_date=snapshot_date,
+        trading_sessions=trading_sessions,
+        top_k=top_k,
+        market_filter=market,
+        exclude_batch=exclude_batch,
+        batch_only=batch_only,
+        advice_filter=advice_filter,
+    )
+    if payload is None:
+        raise HTTPException(status_code=404, detail="snapshot_not_found")
+    return SignalDigestResponse.model_validate(payload)
+
+
+@router.get(
+    "/snapshot-dates",
+    response_model=SignalDigestSnapshotDatesResponse,
+    summary="获取信号摘要可用历史日期",
+)
+def list_signal_digest_snapshot_dates(
+    trading_sessions: int = Query(14, ge=3, le=60),
+    top_k: int = Query(100, ge=3, le=100),
+    market: str = Query("cn", pattern="^(cn|hk|us|all)$"),
+    exclude_batch: bool = Query(False),
+    batch_only: bool = Query(True),
+    advice_filter: str = Query("buy_or_hold", pattern="^(any|buy_or_hold)$"),
+    limit: int = Query(120, ge=1, le=500),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> SignalDigestSnapshotDatesResponse:
+    return SignalDigestSnapshotDatesResponse(
+        items=db_manager.list_signal_digest_snapshot_dates(
+            trading_sessions=trading_sessions,
+            top_k=top_k,
+            market_filter=market,
+            exclude_batch=exclude_batch,
+            batch_only=batch_only,
+            advice_filter=advice_filter,
+            limit=limit,
+        )
+    )
+
+
+@router.post(
+    "/snapshots/init",
+    response_model=SignalDigestSnapshotInitResponse,
+    summary="初始化历史信号摘要快照",
+)
+def init_signal_digest_snapshots(
+    request: SignalDigestSnapshotInitRequest = Body(...),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> SignalDigestSnapshotInitResponse:
+    if request.date_from > request.date_to:
+        raise HTTPException(status_code=422, detail="date_from cannot be after date_to")
+
+    processed = 0
+    skipped = 0
+    written = 0
+    cur = request.date_from
+    while cur <= request.date_to:
+        if not is_market_open("cn", cur):
+            skipped += 1
+            cur += timedelta(days=1)
+            continue
+        processed += 1
+        for sess in (14, 30):
+            payload = build_signal_digest(
+                db_manager,
+                trading_sessions=sess,
+                top_k=100,
+                market_filter=request.market,
+                exclude_batch=request.exclude_batch,
+                batch_only=request.batch_only,
+                advice_filter=request.advice_filter,
+                with_narrative=False,
+                anchor_date_override=cur,
+            )
+            db_manager.upsert_signal_digest_snapshot(
+                snapshot_date=cur,
+                trading_sessions=sess,
+                top_k=100,
+                market_filter=request.market,
+                exclude_batch=request.exclude_batch,
+                batch_only=request.batch_only,
+                advice_filter=request.advice_filter,
+                payload=payload,
+            )
+            written += 1
+        cur += timedelta(days=1)
+
+    return SignalDigestSnapshotInitResponse(
+        processed_trading_days=processed,
+        skipped_non_trading_days=skipped,
+        written_snapshots=written,
+    )

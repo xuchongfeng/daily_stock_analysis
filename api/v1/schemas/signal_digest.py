@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """信号摘要（近窗 analysis_history 聚合）API Schema。"""
 
+from datetime import date
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class SignalDigestBoardRef(BaseModel):
@@ -79,3 +80,39 @@ class SignalDigestResponse(BaseModel):
         None,
         description="缓存失效时间 ISO8601；未启用缓存或强制刷新后首次写入前可能为空",
     )
+
+
+class SignalDigestSnapshotDatesResponse(BaseModel):
+    items: List[str] = Field(default_factory=list, description="可用快照日期（倒序，YYYY-MM-DD）")
+
+
+class SignalDigestSnapshotInitRequest(BaseModel):
+    date_from: date = Field(..., description="初始化起始日期（含）")
+    date_to: date = Field(..., description="初始化结束日期（含）")
+    market: str = Field("cn", description="市场过滤（建议 cn）")
+    exclude_batch: bool = Field(False)
+    batch_only: bool = Field(True)
+    advice_filter: str = Field("buy_or_hold")
+    overwrite_existing: bool = Field(True, description="true=同日同规则覆盖")
+
+    @field_validator("market")
+    @classmethod
+    def _valid_market(cls, v: str) -> str:
+        vv = (v or "").strip().lower()
+        if vv not in ("cn", "hk", "us", "all"):
+            raise ValueError("market must be one of: cn/hk/us/all")
+        return vv
+
+    @field_validator("advice_filter")
+    @classmethod
+    def _valid_advice(cls, v: str) -> str:
+        vv = (v or "").strip().lower()
+        if vv not in ("any", "buy_or_hold"):
+            raise ValueError("advice_filter must be one of: any/buy_or_hold")
+        return vv
+
+
+class SignalDigestSnapshotInitResponse(BaseModel):
+    processed_trading_days: int = 0
+    skipped_non_trading_days: int = 0
+    written_snapshots: int = 0
