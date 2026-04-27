@@ -398,7 +398,7 @@ const SignalDigestPage: React.FC = () => {
                 value={tradingSessions}
                 onChange={(e) => setTradingSessions(Number(e.target.value))}
               >
-                {[14, 30, 60].map((n) => (
+                {[3, 14, 30, 60].map((n) => (
                   <option key={n} value={n}>
                     {n} 日
                   </option>

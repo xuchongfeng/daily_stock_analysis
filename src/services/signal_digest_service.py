@@ -31,6 +31,65 @@ logger = logging.getLogger(__name__)
 _SUMMARY_EXCERPT_LEN = 220
 
 
+def _normalize_by_range(values: List[float]) -> List[float]:
+    if not values:
+        return []
+    mn = min(values)
+    mx = max(values)
+    if abs(mx - mn) < 1e-9:
+        return [1.0 for _ in values]
+    return [(v - mn) / (mx - mn) for v in values]
+
+
+def _allocate_quotas(
+    candidate_counts: List[int],
+    target: int,
+    min_per_board: int,
+    max_per_board: int,
+) -> List[int]:
+    if not candidate_counts:
+        return []
+    capped = [max(0, min(int(n), int(max_per_board))) for n in candidate_counts]
+    total = sum(capped)
+    if total <= target:
+        return capped
+    board_count = len(capped)
+    min_feasible = min(min_per_board, max(0, target // max(1, board_count)))
+    base = [min(n, min_feasible) for n in capped]
+    remain = target - sum(base)
+    if remain < 0:
+        # 极端兜底（理论上不应触发）
+        out = base[:]
+        i = len(out) - 1
+        while sum(out) > target and i >= 0:
+            if out[i] > 0:
+                out[i] -= 1
+            i -= 1
+            if i < 0 and sum(out) > target:
+                i = len(out) - 1
+        return out
+
+    raw = [(target * n / total) if total > 0 else 0.0 for n in capped]
+    frac_order = sorted(
+        [{"idx": i, "frac": raw[i] - int(raw[i])} for i in range(len(raw))],
+        key=lambda x: x["frac"],
+        reverse=True,
+    )
+    while remain > 0:
+        assigned = False
+        for it in frac_order:
+            idx = int(it["idx"])
+            if base[idx] < capped[idx]:
+                base[idx] += 1
+                remain -= 1
+                assigned = True
+                if remain == 0:
+                    break
+        if not assigned:
+            break
+    return base
+
+
 def is_buy_or_hold_advice(operation_advice: Optional[str]) -> bool:
     """
     True if ``operation_advice`` reads as 买入/加仓/持有/增持 等偏多或持有建议。
@@ -213,6 +272,7 @@ def build_signal_digest(
     anchor_date = anchor_date_override or get_effective_trading_date(cal_mkt)
     oldest_date = get_oldest_date_in_trading_window(cal_mkt, trading_sessions, anchor_date)
     since = datetime.combine(oldest_date, datetime.min.time())
+    until = datetime.combine(anchor_date, datetime.max.time())
 
     if batch_only and exclude_batch:
         raise ValueError("batch_only and exclude_batch are mutually exclusive")
@@ -227,6 +287,8 @@ def build_signal_digest(
         batch_only=batch_only,
         limit=200_000,
     )
+    # 锚定历史日期时，必须同时限制上界到 anchor_date 当日，避免混入未来日期记录。
+    rows = [r for r in rows if (getattr(r, "created_at", None) is None or r.created_at <= until)]
     rows_fetched = len(rows)
     if af == "buy_or_hold":
         rows = [r for r in rows if is_buy_or_hold_advice(r.operation_advice)]
@@ -368,3 +430,226 @@ def build_signal_digest(
         "narrative_markdown": narrative_md,
         "narrative_generated": narrative_generated,
     }
+
+
+def build_portfolio_selection_from_digest(
+    digest_payload: Dict[str, Any],
+    *,
+    top_board_count: int = 4,
+    per_board_candidate: int = 5,
+    target_count: int = 12,
+    min_per_board: int = 2,
+    high_score_threshold: float = 75.0,
+    shrink_k: float = 10.0,
+) -> Dict[str, Any]:
+    picks = list(digest_payload.get("picks") or [])
+    eligible_picks = [
+        p for p in picks
+        if float((p or {}).get("score") or 0.0) > float(high_score_threshold)
+    ]
+    if not eligible_picks:
+        return {
+            "window": digest_payload.get("window") or {},
+            "strategy": {
+                "top_board_count": top_board_count,
+                "per_board_candidate": per_board_candidate,
+                "target_count": target_count,
+                "min_per_board": min_per_board,
+                "high_score_threshold": high_score_threshold,
+                "shrink_k": shrink_k,
+            },
+            "boards": [],
+            "selected": [],
+        }
+
+    high_count_all = sum(1 for p in eligible_picks if float(p.get("score") or 0.0) > high_score_threshold)
+    global_high_ratio = high_count_all / max(1, len(eligible_picks))
+
+    concept_names: set[str] = set()
+    for p in eligible_picks:
+        for tag in (p.get("concept_tags") or []):
+            if tag:
+                concept_names.add(str(tag))
+
+    raw_stats: List[Dict[str, Any]] = []
+    for name in concept_names:
+        members = [
+            p
+            for p in eligible_picks
+            if name in [str(t) for t in (p.get("concept_tags") or [])]
+        ]
+        members.sort(key=lambda x: float(x.get("score") or 0.0), reverse=True)
+        stock_count = len(members)
+        high_score_count = sum(1 for p in members if float(p.get("score") or 0.0) >= high_score_threshold)
+        ratio_adj = (
+            (high_score_count + shrink_k * global_high_ratio) / (stock_count + shrink_k)
+            if stock_count > 0
+            else 0.0
+        )
+        raw_stats.append(
+            {
+                "name": name,
+                "members": members,
+                "stock_count": stock_count,
+                "high_score_count": high_score_count,
+                "high_score_ratio_adj": ratio_adj,
+                "mix": float(high_score_count) * float(ratio_adj),
+            }
+        )
+
+    norm_h = _normalize_by_range([float(x["high_score_count"]) for x in raw_stats])
+    norm_r = _normalize_by_range([float(x["high_score_ratio_adj"]) for x in raw_stats])
+    norm_mix = _normalize_by_range([float(x["mix"]) for x in raw_stats])
+    for i, item in enumerate(raw_stats):
+        item["board_strength"] = round(0.35 * norm_h[i] + 0.45 * norm_r[i] + 0.2 * norm_mix[i], 6)
+
+    top_boards = sorted(raw_stats, key=lambda x: float(x["board_strength"]), reverse=True)[: max(1, int(top_board_count))]
+    for b in top_boards:
+        b["candidates"] = list(b["members"][: max(1, int(per_board_candidate))])
+
+    quotas = _allocate_quotas(
+        [len(b["candidates"]) for b in top_boards],
+        int(target_count),
+        int(min_per_board),
+        int(per_board_candidate),
+    )
+
+    board_stats = []
+    for i, b in enumerate(top_boards):
+        board_stats.append(
+            {
+                "name": b["name"],
+                "board_strength": float(b["board_strength"]),
+                "stock_count": int(b["stock_count"]),
+                "high_score_count": int(b["high_score_count"]),
+                "high_score_ratio_adj": float(b["high_score_ratio_adj"]),
+                "candidate_count": len(b["candidates"]),
+                "quota": int(quotas[i] if i < len(quotas) else 0),
+            }
+        )
+
+    selected_by_code: Dict[str, Dict[str, Any]] = {}
+    used_by_board: Dict[str, int] = {str(b["name"]): 0 for b in top_boards}
+
+    def _add_selected(pick: Dict[str, Any], board_name: str, reason: str) -> None:
+        code = str(pick.get("code") or "").strip()
+        if not code or code in selected_by_code:
+            return
+        selected_by_code[code] = {
+            **pick,
+            "board_name": board_name,
+            "selected_reason": reason,
+        }
+        used_by_board[board_name] = int(used_by_board.get(board_name, 0)) + 1
+
+    # Step1: 板块保底
+    for i, board in enumerate(top_boards):
+        name = str(board["name"])
+        quota = int(quotas[i] if i < len(quotas) else 0)
+        guarantee = min(int(min_per_board), quota)
+        for pick in board["candidates"]:
+            if len(selected_by_code) >= int(target_count):
+                break
+            if int(used_by_board.get(name, 0)) >= guarantee:
+                break
+            _add_selected(pick, name, "板块保底")
+
+    # Step2: 20池内全局补位
+    flattened = []
+    for board in top_boards:
+        name = str(board["name"])
+        strength = float(board["board_strength"])
+        for pick in board["candidates"]:
+            flattened.append({"pick": pick, "board_name": name, "strength": strength})
+    flattened.sort(
+        key=lambda x: (
+            -float((x["pick"] or {}).get("score") or 0.0),
+            -float(x["strength"]),
+            str((x["pick"] or {}).get("code") or ""),
+        )
+    )
+    quota_by_board = {str(top_boards[i]["name"]): int(quotas[i] if i < len(quotas) else 0) for i in range(len(top_boards))}
+    for item in flattened:
+        if len(selected_by_code) >= int(target_count):
+            break
+        board_name = str(item["board_name"])
+        if int(used_by_board.get(board_name, 0)) >= int(quota_by_board.get(board_name, 0)):
+            continue
+        _add_selected(dict(item["pick"]), board_name, "全局补位")
+
+    # Step3: 候选外补位
+    top_board_name_set = {str(b["name"]) for b in top_boards}
+    fallback = sorted(
+        eligible_picks,
+        key=lambda p: (
+            -float(p.get("score") or 0.0),
+            str(p.get("code") or ""),
+        ),
+    )
+    for pick in fallback:
+        if len(selected_by_code) >= int(target_count):
+            break
+        tags = [str(t) for t in (pick.get("concept_tags") or []) if t]
+        board_name = next((t for t in tags if t in top_board_name_set), "其他")
+        _add_selected(pick, board_name, "候选外补位")
+
+    selected = sorted(
+        list(selected_by_code.values()),
+        key=lambda x: (
+            -float(x.get("score") or 0.0),
+            str(x.get("code") or ""),
+        ),
+    )[: int(target_count)]
+
+    return {
+        "window": digest_payload.get("window") or {},
+        "strategy": {
+            "top_board_count": int(top_board_count),
+            "per_board_candidate": int(per_board_candidate),
+            "target_count": int(target_count),
+            "min_per_board": int(min_per_board),
+            "high_score_threshold": float(high_score_threshold),
+            "shrink_k": float(shrink_k),
+        },
+        "boards": board_stats,
+        "selected": selected,
+    }
+
+
+def build_portfolio_selection(
+    db: DatabaseManager,
+    *,
+    trading_sessions: int = 14,
+    top_k: int = 100,
+    market_filter: str = "cn",
+    exclude_batch: bool = False,
+    batch_only: bool = True,
+    advice_filter: str = "buy_or_hold",
+    top_board_count: int = 4,
+    per_board_candidate: int = 5,
+    target_count: int = 12,
+    min_per_board: int = 2,
+    high_score_threshold: float = 75.0,
+    shrink_k: float = 10.0,
+    anchor_date_override: Optional[date] = None,
+) -> Dict[str, Any]:
+    digest_payload = build_signal_digest(
+        db,
+        trading_sessions=trading_sessions,
+        top_k=top_k,
+        market_filter=market_filter,
+        exclude_batch=exclude_batch,
+        batch_only=batch_only,
+        advice_filter=advice_filter,
+        with_narrative=False,
+        anchor_date_override=anchor_date_override,
+    )
+    return build_portfolio_selection_from_digest(
+        digest_payload,
+        top_board_count=top_board_count,
+        per_board_candidate=per_board_candidate,
+        target_count=target_count,
+        min_per_board=min_per_board,
+        high_score_threshold=high_score_threshold,
+        shrink_k=shrink_k,
+    )

@@ -12,6 +12,7 @@ import PortfolioPage from './pages/PortfolioPage';
 import MarketScannerPage from './pages/MarketScannerPage';
 import WatchlistPage from './pages/WatchlistPage';
 import ConceptBoardsPage from './pages/ConceptBoardsPage';
+import PortfolioSelectionPage from './pages/PortfolioSelectionPage';
 import { ApiErrorAlert, Shell } from './components/common';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useAgentChatStore } from './stores/agentChatStore';
@@ -66,6 +67,7 @@ const AppContent: React.FC = () => {
     <Routes>
       <Route element={<Shell />}>
         <Route path="/" element={<SignalDigestPage />} />
+        <Route path="/portfolio-selection" element={<PortfolioSelectionPage />} />
         <Route path="/analyze" element={<HomePage />} />
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/chat" element={<ChatPage />} />

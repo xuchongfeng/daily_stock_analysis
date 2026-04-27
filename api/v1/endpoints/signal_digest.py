@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from api.deps import get_database_manager
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.signal_digest import (
+    PortfolioSelectionResponse,
     SignalDigestResponse,
     SignalDigestSnapshotDatesResponse,
     SignalDigestSnapshotInitRequest,
@@ -19,14 +20,142 @@ from api.v1.schemas.signal_digest import (
 from src.config import get_config
 from src.core.trading_calendar import is_market_open
 from src.services.signal_digest_service import (
+    build_portfolio_selection,
     build_signal_digest,
     compute_signal_digest_cache_key,
 )
+from src.services.backtest_service import BacktestService
 from src.storage import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get(
+    "/portfolio-selection",
+    response_model=PortfolioSelectionResponse,
+    summary="组合选股（方案A）",
+)
+def get_portfolio_selection(
+    strategy_id: str = Query("strategy_1", pattern="^strategy_1$"),
+    signal_date: date | None = Query(None, description="信号日期（YYYY-MM-DD，默认最新有效交易日）"),
+    trading_sessions: int = Query(14, ge=3, le=60),
+    top_k: int = Query(100, ge=10, le=200),
+    market: str = Query("cn", pattern="^(cn|hk|us|all)$"),
+    exclude_batch: bool = Query(False),
+    batch_only: bool = Query(True),
+    advice_filter: str = Query("buy_or_hold", pattern="^(any|buy_or_hold)$"),
+    top_board_count: int = Query(4, ge=1, le=8),
+    per_board_candidate: int = Query(5, ge=1, le=20),
+    target_count: int = Query(12, ge=1, le=50),
+    min_per_board: int = Query(2, ge=1, le=10),
+    high_score_threshold: float = Query(75.0, ge=0.0, le=100.0),
+    shrink_k: float = Query(10.0, ge=0.0, le=200.0),
+    backtest_eval_window_days: int = Query(10, ge=1, le=120, description="回测统计窗口（交易日）"),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> PortfolioSelectionResponse:
+    if exclude_batch and batch_only:
+        raise HTTPException(
+            status_code=422,
+            detail="exclude_batch 与 batch_only 不能同时为 true",
+        )
+    try:
+        payload = build_portfolio_selection(
+            db_manager,
+            trading_sessions=trading_sessions,
+            top_k=top_k,
+            market_filter=market,
+            exclude_batch=exclude_batch,
+            batch_only=batch_only,
+            advice_filter=advice_filter,
+            top_board_count=top_board_count,
+            per_board_candidate=per_board_candidate,
+            target_count=target_count,
+            min_per_board=min_per_board,
+            high_score_threshold=high_score_threshold,
+            shrink_k=shrink_k,
+            anchor_date_override=signal_date,
+        )
+        strategy = {
+            "strategy_id": strategy_id,
+            "name": "策略1：概念强度配额精选",
+            "description": (
+                "先按概念板块强度选 Top4，再按每板块 Top5 候选形成 20 只池子，"
+                "按板块样本比例配额并保证每板块至少2只，最终选出12只。"
+            ),
+            "top_board_count": top_board_count,
+            "per_board_candidate": per_board_candidate,
+            "target_count": target_count,
+            "min_per_board": min_per_board,
+            "high_score_threshold": high_score_threshold,
+            "shrink_k": shrink_k,
+        }
+        payload["strategy"] = strategy
+        payload["strategy_options"] = [strategy]
+
+        selected_codes = [str((it or {}).get("code") or "").strip() for it in payload.get("selected", [])]
+        selected_codes = [c for c in selected_codes if c]
+        overview = {
+            "eval_window_days": backtest_eval_window_days,
+            "signal_date": (
+                signal_date.isoformat()
+                if signal_date is not None
+                else str((payload.get("window") or {}).get("anchor_date") or "")
+            ),
+            "selected_count": len(selected_codes),
+            "covered_count": 0,
+            "avg_win_rate_pct": None,
+            "avg_direction_accuracy_pct": None,
+            "avg_simulated_return_pct": None,
+        }
+        by_stock = []
+        if selected_codes:
+            bt_service = BacktestService(db_manager)
+            win_rates = []
+            dir_accs = []
+            sim_rets = []
+            for code in selected_codes:
+                s = bt_service.get_summary(
+                    scope="stock",
+                    code=code,
+                    eval_window_days=backtest_eval_window_days,
+                    analysis_date_from=signal_date,
+                    analysis_date_to=signal_date,
+                )
+                if not s:
+                    by_stock.append({"code": code, "has_data": False})
+                    continue
+                by_stock.append(
+                    {
+                        "code": code,
+                        "has_data": True,
+                        "total_evaluations": s.get("total_evaluations", 0),
+                        "completed_count": s.get("completed_count", 0),
+                        "win_rate_pct": s.get("win_rate_pct"),
+                        "direction_accuracy_pct": s.get("direction_accuracy_pct"),
+                        "avg_simulated_return_pct": s.get("avg_simulated_return_pct"),
+                    }
+                )
+                if s.get("win_rate_pct") is not None:
+                    win_rates.append(float(s["win_rate_pct"]))
+                if s.get("direction_accuracy_pct") is not None:
+                    dir_accs.append(float(s["direction_accuracy_pct"]))
+                if s.get("avg_simulated_return_pct") is not None:
+                    sim_rets.append(float(s["avg_simulated_return_pct"]))
+
+            overview["covered_count"] = sum(1 for x in by_stock if bool(x.get("has_data")))
+            overview["avg_win_rate_pct"] = round(sum(win_rates) / len(win_rates), 2) if win_rates else None
+            overview["avg_direction_accuracy_pct"] = round(sum(dir_accs) / len(dir_accs), 2) if dir_accs else None
+            overview["avg_simulated_return_pct"] = round(sum(sim_rets) / len(sim_rets), 2) if sim_rets else None
+        payload["backtest_overview"] = overview
+        payload["backtest_by_stock"] = by_stock
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("portfolio_selection failed: %s", exc)
+        raise HTTPException(status_code=500, detail="portfolio_selection_failed") from exc
+    return PortfolioSelectionResponse.model_validate(payload)
 
 
 @router.get(

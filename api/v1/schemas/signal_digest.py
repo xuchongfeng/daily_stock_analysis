@@ -116,3 +116,46 @@ class SignalDigestSnapshotInitResponse(BaseModel):
     processed_trading_days: int = 0
     skipped_non_trading_days: int = 0
     written_snapshots: int = 0
+
+
+class PortfolioSelectionStrategy(BaseModel):
+    strategy_id: str = "strategy_1"
+    name: str = "策略1：概念强度配额精选"
+    description: str = (
+        "先按概念板块强度选 Top4，再按每板块 Top5 候选形成 20 只池子，"
+        "按板块样本比例配额并保证每板块至少2只，最终选出12只。"
+    )
+    top_board_count: int = 4
+    per_board_candidate: int = 5
+    target_count: int = 12
+    min_per_board: int = 2
+    high_score_threshold: float = 75.0
+    shrink_k: float = 10.0
+
+
+class PortfolioSelectionBoardStat(BaseModel):
+    name: str
+    board_strength: float
+    stock_count: int
+    high_score_count: int
+    high_score_ratio_adj: float
+    candidate_count: int
+    quota: int
+
+
+class PortfolioSelectionPick(SignalDigestPick):
+    board_name: str = Field("其他", description="本策略归属板块")
+    selected_reason: str = Field(
+        "全局补位",
+        description="入选原因：板块保底/全局补位/候选外补位",
+    )
+
+
+class PortfolioSelectionResponse(BaseModel):
+    window: SignalDigestWindow
+    strategy: PortfolioSelectionStrategy = Field(default_factory=PortfolioSelectionStrategy)
+    boards: List[PortfolioSelectionBoardStat] = Field(default_factory=list)
+    selected: List[PortfolioSelectionPick] = Field(default_factory=list)
+    strategy_options: List[PortfolioSelectionStrategy] = Field(default_factory=list)
+    backtest_overview: dict = Field(default_factory=dict, description="策略组合回测概览")
+    backtest_by_stock: List[dict] = Field(default_factory=list, description="策略入选个股回测概览")

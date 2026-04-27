@@ -1,6 +1,10 @@
 import apiClient from './index';
 import { toCamelCase } from './utils';
-import type { SignalDigestResponse, SignalDigestSnapshotDatesResponse } from '../types/signalDigest';
+import type {
+  PortfolioSelectionResponse,
+  SignalDigestResponse,
+  SignalDigestSnapshotDatesResponse,
+} from '../types/signalDigest';
 
 const BASE = '/api/v1/insights/signal-digest';
 
@@ -91,5 +95,38 @@ export const signalDigestApi = {
       },
     });
     return toCamelCase<SignalDigestSnapshotDatesResponse>(response.data);
+  },
+  getPortfolioSelection: async (
+    params: Omit<SignalDigestQuery, 'withNarrative' | 'useCache' | 'refresh'> & {
+      strategyId?: 'strategy_1';
+      backtestEvalWindowDays?: number;
+      signalDate?: string;
+    } = {},
+  ): Promise<PortfolioSelectionResponse> => {
+    const {
+      tradingSessions = 14,
+      topK = 100,
+      market = 'cn',
+      excludeBatch = false,
+      batchOnly = true,
+      adviceFilter = 'buy_or_hold',
+      strategyId = 'strategy_1',
+      backtestEvalWindowDays = 10,
+      signalDate,
+    } = params;
+    const response = await apiClient.get<Record<string, unknown>>(`${BASE}/portfolio-selection`, {
+      params: {
+        trading_sessions: tradingSessions,
+        top_k: topK,
+        market,
+        exclude_batch: excludeBatch,
+        batch_only: batchOnly,
+        advice_filter: adviceFilter,
+        strategy_id: strategyId,
+        backtest_eval_window_days: backtestEvalWindowDays,
+        signal_date: signalDate || undefined,
+      },
+    });
+    return toCamelCase<PortfolioSelectionResponse>(response.data);
   },
 };

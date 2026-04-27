@@ -36,6 +36,7 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'signal-digest', label: '信号摘要', to: '/', icon: LayoutDashboard, exact: true },
+  { key: 'portfolio-selection', label: '组合选股', to: '/portfolio-selection', icon: Layers },
   { key: 'analyze', label: '分析工作台', to: '/analyze', icon: LineChart },
   { key: 'watchlist', label: '我的自选', to: '/watchlist', icon: Bookmark },
   { key: 'chat', label: '问股', to: '/chat', icon: MessageSquareQuote, badge: 'completion' },
