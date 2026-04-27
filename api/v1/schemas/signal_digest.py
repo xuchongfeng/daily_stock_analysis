@@ -120,16 +120,16 @@ class SignalDigestSnapshotInitResponse(BaseModel):
 
 class PortfolioSelectionStrategy(BaseModel):
     strategy_id: str = "strategy_1"
-    name: str = "策略1：概念强度配额精选"
+    name: str = "策略1：Top8概念板块精选"
     description: str = (
-        "先按概念板块强度选 Top4，再按每板块 Top5 候选形成 20 只池子，"
-        "按板块样本比例配额并保证每板块至少2只，最终选出12只。"
+        "先按概念板块强度选 Top8，再按每板块 Top4 形成候选池，"
+        "仅保留评分 >72 的个股，最终按全局评分取 Top15。"
     )
-    top_board_count: int = 4
-    per_board_candidate: int = 5
-    target_count: int = 12
+    top_board_count: int = 8
+    per_board_candidate: int = 4
+    target_count: int = 15
     min_per_board: int = 2
-    high_score_threshold: float = 75.0
+    high_score_threshold: float = 72.0
     shrink_k: float = 10.0
 
 

@@ -125,7 +125,7 @@ const PortfolioSelectionPage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold text-foreground">组合选股</h1>
-            <p className="mt-1 text-sm text-secondary-text">支持多策略扩展，当前已上线策略1（概念强度配额精选）。</p>
+            <p className="mt-1 text-sm text-secondary-text">支持多策略扩展，当前已上线策略1（Top8概念板块精选）。</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
@@ -140,7 +140,7 @@ const PortfolioSelectionPage: React.FC = () => {
                 </option>
               ))}
               {(data?.strategyOptions ?? []).length === 0 ? (
-                <option value="strategy_1">策略1：概念强度配额精选</option>
+                <option value="strategy_1">策略1：Top8概念板块精选</option>
               ) : null}
             </select>
             <select
@@ -191,10 +191,10 @@ const PortfolioSelectionPage: React.FC = () => {
           </div>
         </div>
         <div className="mt-3 rounded-xl border border-border/60 bg-hover/20 p-3">
-          <div className="text-sm font-medium text-foreground">{data?.strategy.name ?? '策略1：概念强度配额精选'}</div>
+          <div className="text-sm font-medium text-foreground">{data?.strategy.name ?? '策略1：Top8概念板块精选'}</div>
           <div className="mt-1 text-xs leading-relaxed text-secondary-text">
             {data?.strategy.description ??
-              '先按概念板块强度选 Top4，再按每板块 Top5 候选形成 20 只池子，按板块样本比例配额并保证每板块至少2只，最终选出12只。'}
+              '先按概念板块强度选 Top8，再按每板块 Top4 形成候选池，仅保留评分 >72 的个股，最终按全局评分取 Top15。'}
           </div>
         </div>
       </Card>

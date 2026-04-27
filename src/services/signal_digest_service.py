@@ -435,11 +435,11 @@ def build_signal_digest(
 def build_portfolio_selection_from_digest(
     digest_payload: Dict[str, Any],
     *,
-    top_board_count: int = 4,
-    per_board_candidate: int = 5,
-    target_count: int = 12,
+    top_board_count: int = 8,
+    per_board_candidate: int = 4,
+    target_count: int = 15,
     min_per_board: int = 2,
-    high_score_threshold: float = 75.0,
+    high_score_threshold: float = 72.0,
     shrink_k: float = 10.0,
 ) -> Dict[str, Any]:
     picks = list(digest_payload.get("picks") or [])
@@ -507,15 +507,8 @@ def build_portfolio_selection_from_digest(
     for b in top_boards:
         b["candidates"] = list(b["members"][: max(1, int(per_board_candidate))])
 
-    quotas = _allocate_quotas(
-        [len(b["candidates"]) for b in top_boards],
-        int(target_count),
-        int(min_per_board),
-        int(per_board_candidate),
-    )
-
     board_stats = []
-    for i, b in enumerate(top_boards):
+    for b in top_boards:
         board_stats.append(
             {
                 "name": b["name"],
@@ -524,12 +517,11 @@ def build_portfolio_selection_from_digest(
                 "high_score_count": int(b["high_score_count"]),
                 "high_score_ratio_adj": float(b["high_score_ratio_adj"]),
                 "candidate_count": len(b["candidates"]),
-                "quota": int(quotas[i] if i < len(quotas) else 0),
+                "quota": min(len(b["candidates"]), int(per_board_candidate)),
             }
         )
 
     selected_by_code: Dict[str, Dict[str, Any]] = {}
-    used_by_board: Dict[str, int] = {str(b["name"]): 0 for b in top_boards}
 
     def _add_selected(pick: Dict[str, Any], board_name: str, reason: str) -> None:
         code = str(pick.get("code") or "").strip()
@@ -540,21 +532,8 @@ def build_portfolio_selection_from_digest(
             "board_name": board_name,
             "selected_reason": reason,
         }
-        used_by_board[board_name] = int(used_by_board.get(board_name, 0)) + 1
 
-    # Step1: 板块保底
-    for i, board in enumerate(top_boards):
-        name = str(board["name"])
-        quota = int(quotas[i] if i < len(quotas) else 0)
-        guarantee = min(int(min_per_board), quota)
-        for pick in board["candidates"]:
-            if len(selected_by_code) >= int(target_count):
-                break
-            if int(used_by_board.get(name, 0)) >= guarantee:
-                break
-            _add_selected(pick, name, "板块保底")
-
-    # Step2: 20池内全局补位
+    # Top8 板块 * 每板块 Top4 形成候选池，再全局取 Top15。
     flattened = []
     for board in top_boards:
         name = str(board["name"])
@@ -568,30 +547,11 @@ def build_portfolio_selection_from_digest(
             str((x["pick"] or {}).get("code") or ""),
         )
     )
-    quota_by_board = {str(top_boards[i]["name"]): int(quotas[i] if i < len(quotas) else 0) for i in range(len(top_boards))}
     for item in flattened:
         if len(selected_by_code) >= int(target_count):
             break
         board_name = str(item["board_name"])
-        if int(used_by_board.get(board_name, 0)) >= int(quota_by_board.get(board_name, 0)):
-            continue
-        _add_selected(dict(item["pick"]), board_name, "全局补位")
-
-    # Step3: 候选外补位
-    top_board_name_set = {str(b["name"]) for b in top_boards}
-    fallback = sorted(
-        eligible_picks,
-        key=lambda p: (
-            -float(p.get("score") or 0.0),
-            str(p.get("code") or ""),
-        ),
-    )
-    for pick in fallback:
-        if len(selected_by_code) >= int(target_count):
-            break
-        tags = [str(t) for t in (pick.get("concept_tags") or []) if t]
-        board_name = next((t for t in tags if t in top_board_name_set), "其他")
-        _add_selected(pick, board_name, "候选外补位")
+        _add_selected(dict(item["pick"]), board_name, "全局Top15")
 
     selected = sorted(
         list(selected_by_code.values()),
@@ -625,11 +585,11 @@ def build_portfolio_selection(
     exclude_batch: bool = False,
     batch_only: bool = True,
     advice_filter: str = "buy_or_hold",
-    top_board_count: int = 4,
-    per_board_candidate: int = 5,
-    target_count: int = 12,
+    top_board_count: int = 8,
+    per_board_candidate: int = 4,
+    target_count: int = 15,
     min_per_board: int = 2,
-    high_score_threshold: float = 75.0,
+    high_score_threshold: float = 72.0,
     shrink_k: float = 10.0,
     anchor_date_override: Optional[date] = None,
 ) -> Dict[str, Any]:

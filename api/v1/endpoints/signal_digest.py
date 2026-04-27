@@ -46,11 +46,11 @@ def get_portfolio_selection(
     exclude_batch: bool = Query(False),
     batch_only: bool = Query(True),
     advice_filter: str = Query("buy_or_hold", pattern="^(any|buy_or_hold)$"),
-    top_board_count: int = Query(4, ge=1, le=8),
-    per_board_candidate: int = Query(5, ge=1, le=20),
-    target_count: int = Query(12, ge=1, le=50),
+    top_board_count: int = Query(8, ge=1, le=12),
+    per_board_candidate: int = Query(4, ge=1, le=20),
+    target_count: int = Query(15, ge=1, le=50),
     min_per_board: int = Query(2, ge=1, le=10),
-    high_score_threshold: float = Query(75.0, ge=0.0, le=100.0),
+    high_score_threshold: float = Query(72.0, ge=0.0, le=100.0),
     shrink_k: float = Query(10.0, ge=0.0, le=200.0),
     backtest_eval_window_days: int = Query(10, ge=1, le=120, description="回测统计窗口（交易日）"),
     db_manager: DatabaseManager = Depends(get_database_manager),
@@ -79,10 +79,10 @@ def get_portfolio_selection(
         )
         strategy = {
             "strategy_id": strategy_id,
-            "name": "策略1：概念强度配额精选",
+            "name": "策略1：Top8概念板块精选",
             "description": (
-                "先按概念板块强度选 Top4，再按每板块 Top5 候选形成 20 只池子，"
-                "按板块样本比例配额并保证每板块至少2只，最终选出12只。"
+                "先按概念板块强度选 Top8，再按每板块 Top4 形成候选池，"
+                "仅保留评分 >72 的个股，最终按全局评分取 Top15。"
             ),
             "top_board_count": top_board_count,
             "per_board_candidate": per_board_candidate,
