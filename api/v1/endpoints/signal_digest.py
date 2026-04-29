@@ -4,7 +4,11 @@
 """
 
 import logging
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, date
+from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
@@ -13,6 +17,8 @@ from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.signal_digest import (
     PortfolioSelectionResponse,
     SignalDigestResponse,
+    SignalDigestTaskAcceptedResponse,
+    SignalDigestTaskStatusResponse,
     SignalDigestSnapshotDatesResponse,
     SignalDigestSnapshotInitRequest,
     SignalDigestSnapshotInitResponse,
@@ -30,6 +36,129 @@ from src.storage import DatabaseManager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_SIGNAL_DIGEST_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="signal-digest")
+_SIGNAL_DIGEST_TASKS: Dict[str, Dict[str, Any]] = {}
+_SIGNAL_DIGEST_TASKS_LOCK = threading.Lock()
+
+
+def _compute_signal_digest_payload(
+    *,
+    db_manager: DatabaseManager,
+    trading_sessions: int,
+    top_k: int,
+    market: str,
+    exclude_batch: bool,
+    batch_only: bool,
+    advice_filter: str,
+    with_narrative: bool,
+    use_cache: bool,
+    refresh: bool,
+) -> Dict[str, Any]:
+    cfg = get_config()
+    ttl = int(getattr(cfg, "signal_digest_cache_ttl_seconds", 0) or 0)
+    cache_key: str | None = None
+    if ttl > 0 and use_cache:
+        cache_key = compute_signal_digest_cache_key(
+            trading_sessions=trading_sessions,
+            top_k=top_k,
+            market_filter=market,
+            exclude_batch=exclude_batch,
+            batch_only=batch_only,
+            advice_filter=advice_filter,
+            with_narrative=with_narrative,
+        )
+        if not refresh:
+            hit = db_manager.get_signal_digest_cache_payload(cache_key)
+            if hit is not None:
+                payload, exp = hit
+                return {
+                    **payload,
+                    "from_cache": True,
+                    "cache_expires_at": exp.isoformat(),
+                }
+
+    payload = build_signal_digest(
+        db_manager,
+        trading_sessions=trading_sessions,
+        top_k=top_k,
+        market_filter=market,
+        exclude_batch=exclude_batch,
+        batch_only=batch_only,
+        advice_filter=advice_filter,
+        with_narrative=with_narrative,
+    )
+
+    if refresh and top_k == 100 and trading_sessions in (14, 30):
+        try:
+            window = payload.get("window") or {}
+            anchor_date = window.get("anchor_date")
+            if anchor_date:
+                snap_date = datetime.fromisoformat(str(anchor_date)).date()
+                db_manager.upsert_signal_digest_snapshot(
+                    snapshot_date=snap_date,
+                    trading_sessions=trading_sessions,
+                    top_k=top_k,
+                    market_filter=market,
+                    exclude_batch=exclude_batch,
+                    batch_only=batch_only,
+                    advice_filter=advice_filter,
+                    payload=payload,
+                )
+        except Exception as exc:
+            logger.warning("signal_digest snapshot write skipped: %s", exc)
+
+    expires_iso: str | None = None
+    if ttl > 0 and use_cache and cache_key is not None:
+        try:
+            exp = db_manager.set_signal_digest_cache_payload(cache_key, payload, ttl)
+            expires_iso = exp.isoformat()
+        except Exception as exc:
+            logger.warning("signal_digest cache write skipped: %s", exc)
+            expires_iso = (datetime.now() + timedelta(seconds=ttl)).isoformat()
+    return {
+        **payload,
+        "from_cache": False,
+        "cache_expires_at": expires_iso,
+    }
+
+
+def _submit_signal_digest_task(*, task_args: Dict[str, Any]) -> str:
+    task_id = str(uuid.uuid4())
+    submitted_at = datetime.now().isoformat()
+    with _SIGNAL_DIGEST_TASKS_LOCK:
+        _SIGNAL_DIGEST_TASKS[task_id] = {
+            "task_id": task_id,
+            "status": "queued",
+            "submitted_at": submitted_at,
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "result": None,
+        }
+
+    def _runner() -> None:
+        with _SIGNAL_DIGEST_TASKS_LOCK:
+            rec = _SIGNAL_DIGEST_TASKS[task_id]
+            rec["status"] = "running"
+            rec["started_at"] = datetime.now().isoformat()
+        try:
+            payload = _compute_signal_digest_payload(**task_args)
+            with _SIGNAL_DIGEST_TASKS_LOCK:
+                rec = _SIGNAL_DIGEST_TASKS[task_id]
+                rec["status"] = "succeeded"
+                rec["finished_at"] = datetime.now().isoformat()
+                rec["result"] = payload
+        except Exception as exc:
+            logger.exception("signal_digest async task failed: %s", exc)
+            with _SIGNAL_DIGEST_TASKS_LOCK:
+                rec = _SIGNAL_DIGEST_TASKS[task_id]
+                rec["status"] = "failed"
+                rec["finished_at"] = datetime.now().isoformat()
+                rec["error"] = str(exc)
+
+    _SIGNAL_DIGEST_EXECUTOR.submit(_runner)
+    return task_id
 
 
 @router.get(
@@ -160,7 +289,7 @@ def get_portfolio_selection(
 
 @router.get(
     "",
-    response_model=SignalDigestResponse,
+    response_model=SignalDigestResponse | SignalDigestTaskAcceptedResponse,
     responses={
         200: {"description": "信号摘要"},
         500: {"description": "服务器错误", "model": ErrorResponse},
@@ -215,91 +344,69 @@ def get_signal_digest(
         False,
         description="为 true 时跳过读缓存并重新计算，若 use_cache 仍为 true 则回写缓存",
     ),
+    wait: bool = Query(
+        False,
+        description="false=异步提交并立即返回任务状态；true=同步等待并返回结果",
+    ),
     db_manager: DatabaseManager = Depends(get_database_manager),
-) -> SignalDigestResponse:
+) -> SignalDigestResponse | SignalDigestTaskAcceptedResponse:
     if exclude_batch and batch_only:
         raise HTTPException(
             status_code=422,
             detail="exclude_batch 与 batch_only 不能同时为 true",
         )
-    cfg = get_config()
-    ttl = int(getattr(cfg, "signal_digest_cache_ttl_seconds", 0) or 0)
-    cache_key: str | None = None
-    if ttl > 0 and use_cache:
-        cache_key = compute_signal_digest_cache_key(
-            trading_sessions=trading_sessions,
-            top_k=top_k,
-            market_filter=market,
-            exclude_batch=exclude_batch,
-            batch_only=batch_only,
-            advice_filter=advice_filter,
-            with_narrative=with_narrative,
-        )
-        if not refresh:
-            hit = db_manager.get_signal_digest_cache_payload(cache_key)
-            if hit is not None:
-                payload, exp = hit
-                merged = {
-                    **payload,
-                    "from_cache": True,
-                    "cache_expires_at": exp.isoformat(),
-                }
-                return SignalDigestResponse.model_validate(merged)
-
-    try:
-        payload = build_signal_digest(
-            db_manager,
-            trading_sessions=trading_sessions,
-            top_k=top_k,
-            market_filter=market,
-            exclude_batch=exclude_batch,
-            batch_only=batch_only,
-            advice_filter=advice_filter,
-            with_narrative=with_narrative,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        logger.exception("signal_digest failed: %s", exc)
-        raise HTTPException(status_code=500, detail="signal_digest_failed") from exc
-
-    # 每次 refresh 时覆盖写入可回溯快照（当前仅保留 14/100、30/100 两档）。
-    if refresh and top_k == 100 and trading_sessions in (14, 30):
-        try:
-            window = payload.get("window") or {}
-            anchor_date = window.get("anchor_date")
-            if anchor_date:
-                snap_date = datetime.fromisoformat(str(anchor_date)).date()
-                db_manager.upsert_signal_digest_snapshot(
-                    snapshot_date=snap_date,
-                    trading_sessions=trading_sessions,
-                    top_k=top_k,
-                    market_filter=market,
-                    exclude_batch=exclude_batch,
-                    batch_only=batch_only,
-                    advice_filter=advice_filter,
-                    payload=payload,
-                )
-        except Exception as exc:
-            logger.warning("signal_digest snapshot write skipped: %s", exc)
-
-    expires_iso: str | None = None
-    if ttl > 0 and use_cache and cache_key is not None:
-        try:
-            exp = db_manager.set_signal_digest_cache_payload(cache_key, payload, ttl)
-            expires_iso = exp.isoformat()
-        except Exception as exc:
-            logger.warning("signal_digest cache write skipped: %s", exc)
-            expires_iso = (datetime.now() + timedelta(seconds=ttl)).isoformat()
-    else:
-        expires_iso = None
-
-    merged = {
-        **payload,
-        "from_cache": False,
-        "cache_expires_at": expires_iso,
+    task_args = {
+        "db_manager": db_manager,
+        "trading_sessions": trading_sessions,
+        "top_k": top_k,
+        "market": market,
+        "exclude_batch": exclude_batch,
+        "batch_only": batch_only,
+        "advice_filter": advice_filter,
+        "with_narrative": with_narrative,
+        "use_cache": use_cache,
+        "refresh": refresh,
     }
-    return SignalDigestResponse.model_validate(merged)
+    if wait:
+        try:
+            merged = _compute_signal_digest_payload(**task_args)
+            return SignalDigestResponse.model_validate(merged)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.exception("signal_digest failed: %s", exc)
+            raise HTTPException(status_code=500, detail="signal_digest_failed") from exc
+
+    task_id = _submit_signal_digest_task(task_args=task_args)
+    with _SIGNAL_DIGEST_TASKS_LOCK:
+        rec = dict(_SIGNAL_DIGEST_TASKS[task_id])
+    return SignalDigestTaskAcceptedResponse(
+        task_id=task_id,
+        status=rec["status"],
+        submitted_at=rec["submitted_at"],
+    )
+
+
+@router.get(
+    "/tasks/{task_id}",
+    response_model=SignalDigestTaskStatusResponse,
+    summary="查询信号摘要异步任务状态",
+)
+def get_signal_digest_task(task_id: str) -> SignalDigestTaskStatusResponse:
+    with _SIGNAL_DIGEST_TASKS_LOCK:
+        rec = _SIGNAL_DIGEST_TASKS.get(task_id)
+        if rec is None:
+            raise HTTPException(status_code=404, detail="signal_digest_task_not_found")
+        payload = dict(rec)
+    return SignalDigestTaskStatusResponse(
+        task_id=payload["task_id"],
+        status=payload["status"],
+        submitted_at=payload["submitted_at"],
+        started_at=payload.get("started_at"),
+        finished_at=payload.get("finished_at"),
+        error=payload.get("error"),
+        result=payload.get("result"),
+    )
 
 
 @router.get(

@@ -54,6 +54,23 @@ export type SignalDigestSnapshotDatesResponse = {
   items: string[];
 };
 
+export type SignalDigestTaskAcceptedResponse = {
+  taskId: string;
+  status: 'queued' | 'running';
+  submittedAt: string;
+  message?: string;
+};
+
+export type SignalDigestTaskStatusResponse = {
+  taskId: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  submittedAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  error?: string | null;
+  result?: SignalDigestResponse | null;
+};
+
 export type PortfolioSelectionStrategy = {
   strategyId: string;
   name: string;

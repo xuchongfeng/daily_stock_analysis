@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 信号摘要历史锚定日计算补齐上界过滤：聚合窗口除起始日下限外，新增 `anchor_date` 当日上限，避免历史回放时误混入未来日期记录（如 4/3 快照混入 4/4+ 数据）。
 - [chore] 新增临时脚本 `scripts/init_signal_digest_recent20_temp.py`：支持线上一键初始化最近 20 个交易日（可配置）在 `3/14/30/60` 窗口下的 Top100 信号摘要快照。
 - [改进] 组合选股策略1调整为：按概念强度取 Top8 板块、每板块取 Top4 候选，且个股评分需 `>72`，最终按全局评分取 Top15。
+- [改进] 信号摘要接口支持异步任务模式：`GET /api/v1/insights/signal-digest` 增加串行执行队列（同一时刻仅1个任务运行）与 `wait` 参数，默认先返回任务已提交状态；新增 `GET /api/v1/insights/signal-digest/tasks/{task_id}` 查询任务进度与结果，前端已接入自动轮询。
 - [新功能] Web「信号摘要 / 概念板块 / 持仓管理 / 榜单扫描」页面评分支持悬停 1 秒查看近 14 天评分历史（按日最新、自动缓存短期结果）。
 - [新功能] 回测新增选股规则 `signal_digest_top30_14d`：按「信号摘要」口径选取近 14 个交易日 Top30 标的批量回测；Web 回测页新增 Rule 下拉可直接触发。
 - [改进] 信号摘要页筛选项优化：交易日窗口固定为 14/30/60；Top K 选项提升为 100，并同步放宽后端 `top_k` 上限与聚合截断。

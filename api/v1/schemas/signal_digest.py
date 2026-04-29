@@ -2,7 +2,7 @@
 """信号摘要（近窗 analysis_history 聚合）API Schema。"""
 
 from datetime import date
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -79,6 +79,26 @@ class SignalDigestResponse(BaseModel):
     cache_expires_at: Optional[str] = Field(
         None,
         description="缓存失效时间 ISO8601；未启用缓存或强制刷新后首次写入前可能为空",
+    )
+
+
+class SignalDigestTaskAcceptedResponse(BaseModel):
+    task_id: str = Field(..., description="异步任务 ID")
+    status: str = Field("queued", description="任务状态：queued/running")
+    submitted_at: str = Field(..., description="任务提交时间 ISO8601")
+    message: str = Field("signal_digest_task_submitted", description="提交结果说明")
+
+
+class SignalDigestTaskStatusResponse(BaseModel):
+    task_id: str
+    status: str = Field(..., description="任务状态：queued/running/succeeded/failed")
+    submitted_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+    error: Optional[str] = None
+    result: Optional[Dict[str, Any]] = Field(
+        None,
+        description="任务成功时返回 SignalDigestResponse 对应 payload",
     )
 
 

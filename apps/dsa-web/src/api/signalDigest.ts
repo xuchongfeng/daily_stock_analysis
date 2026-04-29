@@ -4,6 +4,8 @@ import type {
   PortfolioSelectionResponse,
   SignalDigestResponse,
   SignalDigestSnapshotDatesResponse,
+  SignalDigestTaskAcceptedResponse,
+  SignalDigestTaskStatusResponse,
 } from '../types/signalDigest';
 
 const BASE = '/api/v1/insights/signal-digest';
@@ -18,7 +20,11 @@ export type SignalDigestQuery = {
   withNarrative?: boolean;
   useCache?: boolean;
   refresh?: boolean;
+  wait?: boolean;
 };
+
+const POLL_INTERVAL_MS = 1200;
+const MAX_POLL_ROUNDS = 180;
 
 export const signalDigestApi = {
   get: async (params: SignalDigestQuery = {}): Promise<SignalDigestResponse> => {
@@ -32,6 +38,7 @@ export const signalDigestApi = {
       withNarrative = true,
       useCache = true,
       refresh = false,
+      wait = false,
     } = params;
     const response = await apiClient.get<Record<string, unknown>>(BASE, {
       params: {
@@ -44,9 +51,25 @@ export const signalDigestApi = {
         with_narrative: withNarrative,
         use_cache: useCache,
         refresh,
+        wait,
       },
     });
-    return toCamelCase<SignalDigestResponse>(response.data);
+    const first = toCamelCase<SignalDigestResponse & SignalDigestTaskAcceptedResponse>(response.data);
+    if (typeof first.taskId !== 'string' || !first.taskId) {
+      return first as SignalDigestResponse;
+    }
+    for (let i = 0; i < MAX_POLL_ROUNDS; i += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, POLL_INTERVAL_MS));
+      const taskRsp = await apiClient.get<Record<string, unknown>>(`${BASE}/tasks/${encodeURIComponent(first.taskId)}`);
+      const task = toCamelCase<SignalDigestTaskStatusResponse>(taskRsp.data);
+      if (task.status === 'succeeded' && task.result) {
+        return task.result;
+      }
+      if (task.status === 'failed') {
+        throw new Error(task.error || 'signal_digest_task_failed');
+      }
+    }
+    throw new Error('signal_digest_task_timeout');
   },
   getSnapshot: async (
     snapshotDate: string,
