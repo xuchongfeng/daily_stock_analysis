@@ -75,7 +75,8 @@ class PortfolioPr2TestCase(unittest.TestCase):
         self.risk_service = PortfolioRiskService(portfolio_service=self.service)
         self._board_fetch_patcher = patch.object(PortfolioRiskService, "_fetch_belong_boards", return_value=[])
         self._board_fetch_patcher.start()
-        self.client = TestClient(create_app(static_dir=data_dir / "empty-static"))
+        es = data_dir / "empty-static"
+        self.client = TestClient(create_app(static_dir=es, user_static_dir=es))
 
     def tearDown(self) -> None:
         DatabaseManager.reset_instance()

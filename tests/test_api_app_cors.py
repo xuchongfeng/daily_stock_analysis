@@ -18,7 +18,8 @@ class AppCorsConfigTestCase(unittest.TestCase):
     def _build_app(self):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
-        return create_app(static_dir=Path(temp_dir.name))
+        p = Path(temp_dir.name)
+        return create_app(static_dir=p, user_static_dir=p)
 
     def test_allow_all_disables_credentials(self):
         with patch.dict(os.environ, {"CORS_ALLOW_ALL": "true"}, clear=False):

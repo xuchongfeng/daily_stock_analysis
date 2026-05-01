@@ -627,7 +627,7 @@ class AnalysisHistoryTestCase(unittest.TestCase):
 
         static_dir = Path(self._temp_dir.name) / "empty-static"
         static_dir.mkdir(exist_ok=True)
-        client = TestClient(create_app(static_dir=static_dir))
+        client = TestClient(create_app(static_dir=static_dir, user_static_dir=static_dir))
 
         response = client.request(
             "DELETE",

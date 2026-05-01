@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] 恢复 CLI `--user-ui` 与 `src/user_frontend.py`（`apps/dsa-user` → `static-user/`）；FastAPI 挂载 C 端至 `/user/`、根路径在无管理端产物时可重定向至 `/user/`，CORS 增加 5174；新增 `scripts/dev_dsa_user.sh`。
+- [新功能] C 端（`apps/dsa-user`）恢复为可构建的 Vite 工程：未登录且开启 `ADMIN_AUTH_ENABLED` 时展示落地页（功能介绍、定价/评价/回测示例占位与登录）；登录后进入原有功能 Tab；未开启认证时访问 `/user/` 直接进入应用。
+- [改进] C 端营销区拆分为子路由并复用雪球风顶栏：`/` 首页、`/features`、`/pricing`、`/reviews`、`/performance`、`/login`；定价页按「体验 ¥0 / 专业 ¥199·月 / 团队面议」三档展开说明与对比表；深链未登录先经 `/login` 再回跳。
 - [改进] Web 浅色主题对比度优化（参考高信息密度股票站风格）：提升文字/边框/悬浮与输入控件对比；新增统一 `ui-tab-pill` 与 `ui-option-chip` 高对比样式并应用于榜单扫描与评分历史；信号摘要标签与状态条强化可读性，设置分类激活态对比提升。
 - [修复] Web 侧边栏新增「组合选股」入口后，图标兼容性问题导致前端构建失败并回退旧静态包；已替换为当前 `lucide-react` 版本可用图标，确保入口可见。
 - [新功能] 新增组合选股后端策略接口 `GET /api/v1/insights/signal-digest/portfolio-selection`：按方案A执行 Top4 概念板块、每板块 Top5 候选、20 选 12（按比例配额且每板块至少2只），并返回板块强度、配额与入选原因。

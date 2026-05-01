@@ -51,6 +51,7 @@ from typing import List, Tuple
 
 from data_provider.base import canonical_stock_code
 from src.webui_frontend import prepare_webui_frontend_assets
+from src.user_frontend import prepare_user_frontend_assets
 from src.config import get_config, Config
 from src.logging_config import apply_litellm_log_noise_reduction, setup_logging
 
@@ -223,6 +224,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --market-scan volume    # A 股成交量 Top N 批量分析
   python main.py --top-movers            # 等价 --market-scan gainers
   python main.py --market-scan gainers --market-scan-date 2026-04-03
+  python main.py --serve-only --user-ui   # 启动 API 并尝试构建/挂载 C 端（static-user）
         '''
     )
 
@@ -321,6 +323,12 @@ def parse_arguments() -> argparse.Namespace:
         '--serve-only',
         action='store_true',
         help='仅启动 FastAPI 后端服务，不自动执行分析'
+    )
+
+    parser.add_argument(
+        '--user-ui',
+        action='store_true',
+        help='启动服务时构建 C 端使用者站点（apps/dsa-user -> static-user/），需已配置 npm 与前端工程',
     )
 
     parser.add_argument(
@@ -861,6 +869,9 @@ def main() -> int:
     if start_serve:
         if not prepare_webui_frontend_assets():
             logger.warning("前端静态资源未就绪，继续启动 FastAPI 服务（Web 页面可能不可用）")
+        if getattr(args, "user_ui", False):
+            if not prepare_user_frontend_assets(enabled=True):
+                logger.warning("C 端（使用者站点）静态资源未就绪，/user 页面可能不可用")
         try:
             start_api_server(host=args.host, port=args.port, config=config)
             bot_clients_started = True

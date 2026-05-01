@@ -68,7 +68,8 @@ class SignalDigestApiTest(unittest.TestCase):
         os.environ["DATABASE_PATH"] = str(db_path)
         DatabaseManager.reset_instance()
         Config.reset_instance()
-        self.app = create_app(static_dir=data_dir / "empty-static")
+        es = data_dir / "empty-static"
+        self.app = create_app(static_dir=es, user_static_dir=es)
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:
@@ -327,7 +328,8 @@ class SignalDigestHttpCacheTest(unittest.TestCase):
         os.environ["SIGNAL_DIGEST_CACHE_TTL_SECONDS"] = "600"
         DatabaseManager.reset_instance()
         Config.reset_instance()
-        self.app = create_app(static_dir=data_dir / "empty-static")
+        es = data_dir / "empty-static"
+        self.app = create_app(static_dir=es, user_static_dir=es)
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:

@@ -355,7 +355,8 @@ class AnalysisApiContractTestCase(unittest.TestCase):
             self.skipTest("fastapi is not installed in this test environment")
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            app = create_app(static_dir=Path(temp_dir))
+            p = Path(temp_dir)
+            app = create_app(static_dir=p, user_static_dir=p)
             schema = app.openapi()["paths"]["/api/v1/analysis/analyze"]["post"]["responses"]["202"][
                 "content"
             ]["application/json"]["schema"]
@@ -741,7 +742,9 @@ class AnalysisApiContractTestCase(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             static_dir = Path(temp_dir)
             (static_dir / "index.html").write_text("<html>spa</html>", encoding="utf-8")
-            app = create_app(static_dir=static_dir)
+            user_empty = Path(temp_dir) / "user_empty"
+            user_empty.mkdir()
+            app = create_app(static_dir=static_dir, user_static_dir=user_empty)
 
             serve_spa = next(
                 route.endpoint for route in app.routes

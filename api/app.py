@@ -25,7 +25,7 @@ from typing import Optional
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 
 from api.v1 import api_v1_router
 from api.middlewares.auth import add_auth_middleware
@@ -45,19 +45,25 @@ async def app_lifespan(app: FastAPI):
             delattr(app.state, "system_config_service")
 
 
-def create_app(static_dir: Optional[Path] = None) -> FastAPI:
+def create_app(
+    static_dir: Optional[Path] = None,
+    user_static_dir: Optional[Path] = None,
+) -> FastAPI:
     """
     创建并配置 FastAPI 应用实例
-    
+
     Args:
-        static_dir: 静态文件目录路径（可选，默认为项目根目录下的 static）
-        
+        static_dir: 管理端 Web 静态目录（默认项目根下 static/）
+        user_static_dir: C 端使用者站点静态目录（默认项目根下 static-user/）
+
     Returns:
         配置完成的 FastAPI 应用实例
     """
-    # 默认静态文件目录
+    repo_root = Path(__file__).resolve().parent.parent
     if static_dir is None:
-        static_dir = Path(__file__).parent.parent / "static"
+        static_dir = repo_root / "static"
+    if user_static_dir is None:
+        user_static_dir = repo_root / "static-user"
     
     # 创建 FastAPI 实例
     app = FastAPI(
@@ -82,6 +88,8 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     allowed_origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
@@ -118,13 +126,19 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
     # 根路由和健康检查
     # ============================================================
     
-    has_frontend = static_dir.exists() and (static_dir / "index.html").exists()
-    
-    if has_frontend:
+    has_admin = static_dir.exists() and (static_dir / "index.html").exists()
+    has_user = user_static_dir.exists() and (user_static_dir / "index.html").exists()
+
+    if has_admin:
         @app.get("/", include_in_schema=False)
         async def root():
-            """根路由 - 返回前端页面"""
+            """根路由 - 返回管理端 Web 页面"""
             return FileResponse(static_dir / "index.html")
+    elif has_user:
+        @app.get("/", include_in_schema=False)
+        async def root():
+            """根路由 - 仅构建 C 端时重定向到使用者站点"""
+            return RedirectResponse(url="/user/", status_code=307)
     else:
         _FRONTEND_NOT_BUILT_HTML = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -145,10 +159,12 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
 </style></head><body><div class="card">
 <h1>&#9888;&#65039; Frontend Not Built</h1>
 <p>API is running, but the Web UI has not been built yet.</p>
-<p>Build the frontend first:</p>
+<p>Build the admin Web UI:</p>
 <p><code>cd apps/dsa-web &amp;&amp; npm install &amp;&amp; npm run build</code></p>
+<p>Or the user site (outputs to <code>static-user/</code>):</p>
+<p><code>cd apps/dsa-user &amp;&amp; npm install &amp;&amp; npm run build</code></p>
 <p>Or start with auto-build:</p>
-<p><code>python main.py --serve-only</code></p>
+<p><code>python main.py --serve-only</code>（管理端） / <code>python main.py --serve-only --user-ui</code>（含 C 端）</p>
 <div class="hint"><p>If you only need the API, visit <a href="/docs">/docs</a> for the interactive API documentation.</p></div>
 <p class="status">API Version 1.0.0 &bull; <a href="/api/health">/api/health</a></p>
 </div></body></html>"""
@@ -173,34 +189,59 @@ def create_app(static_dir: Optional[Path] = None) -> FastAPI:
         )
     
     # ============================================================
-    # 静态文件托管（前端 SPA）
+    # 静态文件托管（管理端 SPA + C 端 /user SPA）
     # ============================================================
-    
-    if has_frontend:
-        # 挂载静态资源目录
+
+    if has_user:
+        user_assets_dir = user_static_dir / "assets"
+        if user_assets_dir.exists():
+            app.mount("/user/assets", StaticFiles(directory=user_assets_dir), name="user_assets")
+
+    if has_admin:
         assets_dir = static_dir / "assets"
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-        
-        # SPA 路由回退
+
+    if has_admin or has_user:
+
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_spa(request: Request, full_path: str):
-            """SPA 路由回退 - 非 API 路由返回 index.html"""
+            """SPA 路由回退：/user/* 为 C 端，其余在存在管理端产物时为管理端 SPA。"""
             if full_path == "api" or full_path.startswith("api/"):
                 return JSONResponse(
                     status_code=404,
-                    content={"error": "not_found", "message": f"API endpoint /{full_path} not found"}
+                    content={"error": "not_found", "message": f"API endpoint /{full_path} not found"},
                 )
-            
+
+            if full_path == "user" or full_path.startswith("user/"):
+                if not has_user:
+                    return JSONResponse(
+                        status_code=404,
+                        content={"error": "not_found", "message": "User UI not built (static-user/ missing)"},
+                    )
+                rel = full_path[5:] if full_path.startswith("user/") else ""
+                if rel:
+                    file_path = user_static_dir / rel
+                    if file_path.exists() and file_path.is_file():
+                        content_type, _ = mimetypes.guess_type(str(file_path))
+                        return FileResponse(file_path, media_type=content_type)
+                return FileResponse(user_static_dir / "index.html")
+
+            if not has_admin and has_user:
+                return JSONResponse(
+                    status_code=404,
+                    content={"error": "not_found", "message": f"Path /{full_path} not found"},
+                )
+
             file_path = static_dir / full_path
             if file_path.exists() and file_path.is_file():
                 # Issue #520: Explicitly resolve MIME type to avoid
                 # browsers rejecting JS modules served as text/plain.
                 content_type, _ = mimetypes.guess_type(str(file_path))
                 return FileResponse(file_path, media_type=content_type)
-            
+
             return FileResponse(static_dir / "index.html")
-    
+
     return app
 
 

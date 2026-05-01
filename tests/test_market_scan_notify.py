@@ -82,7 +82,8 @@ class MarketScanNotifyApiTestCase(unittest.TestCase):
         os.environ["DATABASE_PATH"] = str(self.db_path)
         Config.reset_instance()
         DatabaseManager.reset_instance()
-        app = create_app(static_dir=self.data_dir / "empty-static")
+        es = self.data_dir / "empty-static"
+        app = create_app(static_dir=es, user_static_dir=es)
         self.client = TestClient(app)
         self.db = DatabaseManager.get_instance()
 

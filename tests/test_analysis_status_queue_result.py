@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -25,7 +27,10 @@ class AnalysisStatusQueueResultTest(unittest.TestCase):
     def setUp(self) -> None:
         DatabaseManager.reset_instance()
         Config.reset_instance()
-        self.app = create_app(static_dir=None)
+        self._static_root = tempfile.TemporaryDirectory()
+        self.addCleanup(self._static_root.cleanup)
+        p = Path(self._static_root.name)
+        self.app = create_app(static_dir=p, user_static_dir=p)
         self.client = TestClient(self.app)
 
     def tearDown(self) -> None:
