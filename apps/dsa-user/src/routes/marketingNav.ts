@@ -5,5 +5,5 @@ export const MARKETING_NAV = [
   { to: '/pricing', label: '定价方案' },
   { to: '/reviews', label: '用户评价' },
   { to: '/performance', label: '回测效果' },
-  { to: '/login', label: '登录' },
+  { to: '/login', label: '登录 / 注册' },
 ] as const;

@@ -6,8 +6,11 @@ import {
   Routes,
   useLocation,
 } from 'react-router-dom';
+import { useEffect } from 'react';
 
 import { AuthProvider, useAuth } from './auth/AuthContext';
+import { useAgentChatStore } from './stores/agentChatStore';
+import { gatewayRequiresLogin, isGatewayLoggedIn } from './api/authApi';
 import { MarketingLayout } from './components/MarketingLayout';
 import { ShellLayout } from './components/ShellLayout';
 import { AccountPage } from './pages/AccountPage';
@@ -28,13 +31,24 @@ function Loading() {
   return <div className="loading-screen">加载中…</div>;
 }
 
-/** 仅未登录可访问营销站；已登录访问任一路由均进应用首页 */
-function GuestOnly() {
+function RouteSync() {
+  const location = useLocation();
+  useEffect(() => {
+    useAgentChatStore.getState().setCurrentRoute(location.pathname);
+  }, [location.pathname]);
+  return null;
+}
+
+/** requireGuest=true（管理员门禁开）时已登录则不能逛营销路由；关闭门禁时照常展示营销页。 */
+function MarketingEntryGate({ requireGuest }: { requireGuest: boolean }) {
   const { loading, status } = useAuth();
+  if (!requireGuest) {
+    return <Outlet />;
+  }
   if (loading || !status) {
     return <Loading />;
   }
-  if (status.loggedIn) {
+  if (isGatewayLoggedIn(status)) {
     return <Navigate to="/today" replace />;
   }
   return <Outlet />;
@@ -46,7 +60,7 @@ function SessionShell() {
   if (loading || !status) {
     return <Loading />;
   }
-  if (status.authEnabled && !status.loggedIn) {
+  if (gatewayRequiresLogin(status) && !isGatewayLoggedIn(status)) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
   return (
@@ -56,16 +70,15 @@ function SessionShell() {
   );
 }
 
-/** 未匹配路径：未登录回营销首页；已登录回今日；未启用认证回今日 */
 function WildcardFallback() {
   const { loading, status } = useAuth();
   if (loading || !status) {
     return <Loading />;
   }
-  if (!status.authEnabled) {
+  if (!gatewayRequiresLogin(status)) {
     return <Navigate to="/today" replace />;
   }
-  if (status.loggedIn) {
+  if (isGatewayLoggedIn(status)) {
     return <Navigate to="/today" replace />;
   }
   return <Navigate to="/" replace />;
@@ -77,27 +90,11 @@ function AppRoutes() {
     return <Loading />;
   }
 
-  if (!status.authEnabled) {
-    return (
-      <Routes>
-        <Route element={<SessionShell />}>
-          <Route path="today" element={<TodayPage />} />
-          <Route path="watchlist" element={<WatchlistPage />} />
-          <Route path="chat" element={<ChatPage />} />
-          <Route path="portfolio" element={<PortfolioPage />} />
-          <Route path="discover" element={<DiscoverPage />} />
-          <Route path="review" element={<ReviewPage />} />
-          <Route path="account" element={<AccountPage />} />
-        </Route>
-        <Route path="/" element={<Navigate to="/today" replace />} />
-        <Route path="*" element={<Navigate to="/today" replace />} />
-      </Routes>
-    );
-  }
+  const requireGuestGate = gatewayRequiresLogin(status);
 
   return (
     <Routes>
-      <Route element={<GuestOnly />}>
+      <Route element={<MarketingEntryGate requireGuest={requireGuestGate} />}>
         <Route element={<MarketingLayout />}>
           <Route index element={<HomePage />} />
           <Route path="features" element={<FeaturesPage />} />
@@ -105,6 +102,7 @@ function AppRoutes() {
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="performance" element={<PerformancePage />} />
           <Route path="login" element={<LoginPage />} />
+          <Route path="register" element={<Navigate to="/login?tab=register" replace />} />
         </Route>
       </Route>
       <Route element={<SessionShell />}>
@@ -125,6 +123,7 @@ export default function App() {
   return (
     <BrowserRouter basename="/user">
       <AuthProvider>
+        <RouteSync />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>

@@ -1,71 +1,117 @@
 /**
- * C 端定价方案（与前期产品沟通一致的三档：体验 ¥0、专业 ¥199/月、团队面议）。
- * 限额类条款为产品化表述，落地时由部署方在后台或合同中约定具体数值。
+ * C 端定价方案：免费、¥19、¥49、¥99 四档。
+ * 下表配额与频次为产品与运营侧的**档位目标值**，用于前台对比说明；正式上线以账户后台、计费规则与用户协议为准。
  */
 
-export type PricingPlan = {
-  id: string;
-  name: string;
-  priceDisplay: string;
-  periodNote: string;
-  summary: string;
-  bullets: string[];
-  footnote?: string;
+export type PricingTierId = 'free' | 'p19' | 'p49' | 'p99';
+
+export type PricingTierColumn = {
+  id: PricingTierId;
+  label: string;
+  priceHeadline: string;
+  periodNote?: string;
   featured?: boolean;
 };
 
-export const PRICING_PLANS: PricingPlan[] = [
+export const PRICING_TIER_COLUMNS: PricingTierColumn[] = [
   {
-    id: 'trial',
-    name: '体验',
-    priceDisplay: '¥0',
-    periodNote: '长期可试用（限额内）',
-    summary: '适合先了解产品能力、低频跟踪自选的投资者。',
-    bullets: [
-      '基础行情与只读能力（随数据源与部署配置变化）',
-      '每日分析请求次数与同时跟踪标的数量受限',
-      '社区级支持（文档 / 常见问题）',
-    ],
-    footnote: '体验档不承诺 SLA；超出限额时任务可能排队或降级为摘要输出。',
+    id: 'free',
+    label: '免费',
+    priceHeadline: '¥0',
+    periodNote: '限额内长期使用',
   },
   {
-    id: 'pro',
-    name: '专业',
-    priceDisplay: '¥199',
-    periodNote: '每自然月 · 含税价以运营方公示为准',
-    summary: '适合需要稳定复盘、较高频问股与自选管理的个人用户。',
-    bullets: [
-      '更高频 AI 分析与更大自选池上限（相对体验档提升）',
-      '优先队列：同负载下分析任务优先进入执行（若部署开启队列）',
-      '扩展存储：更长的历史报告与对话留痕保留周期（若开启持久化）',
-      '邮件 / 站内通知等标准支持渠道（以实际开通为准）',
-    ],
-    footnote: '专业档为连续包月计费；可随时在运营规则允许范围内升降级，已扣费用按公示规则结算。',
+    id: 'p19',
+    label: '入门',
+    priceHeadline: '¥19',
+    periodNote: '/ 月 · 含税以公示为准',
+  },
+  {
+    id: 'p49',
+    label: '进阶',
+    priceHeadline: '¥49',
+    periodNote: '/ 月 · 含税以公示为准',
     featured: true,
   },
   {
-    id: 'team',
-    name: '团队',
-    priceDisplay: '面议',
-    periodNote: '按席位 / 按年 / 定制',
-    summary: '适合投研小组、家办与小团队：需要多账号协作与合规留痕。',
-    bullets: [
-      '多账号与基础角色分工（管理员 / 成员视实现而定）',
-      '审计与导出：关键操作留痕、报告批量导出（能力随版本开放）',
-      '定制数据源、专线接入与 SLA 另议',
-      '可商议发票类型、对公结算与培训交付',
-    ],
-    footnote: '团队方案需联系部署方或商务；价格与交付范围以合同为准。',
+    id: 'p99',
+    label: '专业',
+    priceHeadline: '¥99',
+    periodNote: '/ 月 · 含税以公示为准',
   },
 ];
 
-/** 与定价页对比表配套（与上表同一产品口径） */
-export const PRICING_COMPARE_ROWS: { label: string; trial: string; pro: string; team: string }[] = [
-  { label: '定位', trial: '入门体验', pro: '个人深度使用', team: '多人协作 / 机构向' },
-  { label: '月费（参考）', trial: '¥0', pro: '¥199 / 月', team: '面议' },
-  { label: '分析频次', trial: '低 · 限额内', pro: '高 · 明显提升上限', team: '按合同约定' },
-  { label: '自选 / 标的规模', trial: '基础限额', pro: '扩展限额', team: '可定制池与权限' },
-  { label: '队列优先级', trial: '标准', pro: '优先', team: '可约定专属或更高优先级' },
-  { label: '数据留痕 / 存储', trial: '短周期', pro: '延长保留（若开启）', team: '合规归档与导出' },
-  { label: '支持', trial: '自助文档', pro: '标准工单 / 邮件', team: '客户经理 + SLA 另议' },
+/** 对比表一行：首列文案 + 四档格子文案（尽量含可查数字） */
+export type PricingCompareRow = { label: string } & Record<PricingTierId, string>;
+
+/**
+ * 行顺序说明：
+ * - 「AI…」「自选」为硬性配额式数字；
+ * - 「每日分析推送」对齐功能页「每日信息汇总与推送」——交易日送达自选/持仓复盘摘要；
+ * - 「榜单类推送」对齐「榜单扫描/信号摘要」类摘要推送，与即时异动区分开。
+ */
+export const PRICING_COMPARE_ROWS: PricingCompareRow[] = [
+  {
+    label: 'AI 分析与问股合计（次/自然月）',
+    free: '30',
+    p19: '200',
+    p49: '900',
+    p99: '3000',
+  },
+  {
+    label: '同时跟踪自选（上限·只）',
+    free: '15',
+    p19: '50',
+    p49: '200',
+    p99: '500',
+  },
+  {
+    label: '持仓关联深度解读（次/自然月）',
+    free: '—',
+    p19: '5',
+    p49: '40',
+    p99: '150',
+  },
+  {
+    label: '每日分析推送（自选/持仓复盘摘要）',
+    free: '不含',
+    p19: '每个交易日盘后 1 次 · 绑定 1 个通知渠道',
+    p49: '每个交易日盘后 1 次 · 至多 3 个通知渠道',
+    p99: '每个交易日 2 次（午间简讯 + 收盘完整复盘）· 至多 5 个通知渠道',
+  },
+  {
+    label: '榜单类推送（信号/扫描主线摘要）',
+    free: '不含',
+    p19: '每周 1 封（自然周重置）· 单次约 Top20 条目',
+    p49: '每个交易日 1 封 · 单次约 Top30 条目',
+    p99: '每个交易日 2 封 · 单次约 Top50 条目',
+  },
+  {
+    label: '榜单即时异动提醒（条/自然月）',
+    free: '0',
+    p19: '20',
+    p49: '80',
+    p99: '300',
+  },
+  {
+    label: '历史报告与对话留存（天）',
+    free: '7',
+    p19: '30',
+    p49: '90',
+    p99: '365',
+  },
+  {
+    label: '分析任务队列优先级',
+    free: '标准（P3）',
+    p19: '次级优先（P2）',
+    p49: '优先（P1）',
+    p99: '最高优先（P0）',
+  },
+  {
+    label: '支持响应（工作日工单）',
+    free: '仅文档',
+    p19: '48 小时内首响',
+    p49: '24 小时内首响',
+    p99: '12 小时内首响',
+  },
 ];

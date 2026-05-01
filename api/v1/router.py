@@ -14,6 +14,7 @@ from fastapi import APIRouter
 from api.v1.endpoints import (
     analysis,
     auth,
+    portal_auth,
     history,
     stocks,
     backtest,
@@ -35,6 +36,8 @@ router.include_router(
     prefix="/auth",
     tags=["Auth"]
 )
+
+router.include_router(portal_auth.router, prefix="/auth")
 
 router.include_router(
     agent.router,

@@ -6,6 +6,10 @@ export type AuthStatusResponse = {
   passwordSet?: boolean;
   passwordChangeable?: boolean;
   setupState: 'enabled' | 'password_retained' | 'no_password';
+  portalAuthEnabled?: boolean;
+  portalLoggedIn?: boolean;
+  userEmail?: string | null;
+  userName?: string | null;
 };
 
 export const authApi = {

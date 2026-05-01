@@ -740,6 +740,20 @@ class LLMUsage(Base):
     called_at = Column(DateTime, default=datetime.now, index=True)
 
 
+class PortalUser(Base):
+    """C 端 /user 邮箱账号（独立于管理员单密码登录）."""
+
+    __tablename__ = "portal_users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    username = Column(String(128), nullable=False, index=True)
+    password_hash = Column(String(512), nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (Index("ix_portal_users_created", "created_at"),)
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式
@@ -820,6 +834,7 @@ class DatabaseManager:
 
             self._ensure_sqlite_analysis_history_top_movers_columns()
             self._ensure_sqlite_signal_digest_snapshot_columns()
+            self._ensure_sqlite_portal_users_username_column()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -967,6 +982,30 @@ class DatabaseManager:
                 logger.info("SQLite signal_digest_snapshots 已补齐字段: payload_json")
         except Exception as exc:
             logger.warning("补齐 signal_digest_snapshots 字段失败（可忽略若已最新）: %s", exc)
+
+    def _ensure_sqlite_portal_users_username_column(self) -> None:
+        """为已有 SQLite 库补齐 portal_users.username（create_all 不会 ALTER）。"""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(portal_users)")).fetchall()
+            if not rows:
+                return
+            existing = {r[1] for r in rows}
+            if "username" in existing:
+                return
+            with self._engine.begin() as conn:
+                conn.execute(text("ALTER TABLE portal_users ADD COLUMN username VARCHAR(128)"))
+                conn.execute(
+                    text(
+                        "UPDATE portal_users SET username = 'user_' || CAST(id AS TEXT) "
+                        "WHERE username IS NULL OR TRIM(COALESCE(username, '')) = ''"
+                    )
+                )
+            logger.info("SQLite portal_users 已补齐字段: username")
+        except Exception as exc:
+            logger.warning("补齐 portal_users.username 失败（可忽略若已最新）: %s", exc)
 
     def _run_write_transaction(
         self,

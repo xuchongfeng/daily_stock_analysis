@@ -13,7 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] 恢复 CLI `--user-ui` 与 `src/user_frontend.py`（`apps/dsa-user` → `static-user/`）；FastAPI 挂载 C 端至 `/user/`、根路径在无管理端产物时可重定向至 `/user/`，CORS 增加 5174；新增 `scripts/dev_dsa_user.sh`。
 - [新功能] C 端（`apps/dsa-user`）恢复为可构建的 Vite 工程：未登录且开启 `ADMIN_AUTH_ENABLED` 时展示落地页（功能介绍、定价/评价/回测示例占位与登录）；登录后进入原有功能 Tab；未开启认证时访问 `/user/` 直接进入应用。
-- [改进] C 端营销区拆分为子路由并复用雪球风顶栏：`/` 首页、`/features`、`/pricing`、`/reviews`、`/performance`、`/login`；定价页按「体验 ¥0 / 专业 ¥199·月 / 团队面议」三档展开说明与对比表；深链未登录先经 `/login` 再回跳。
+- [改进] C 端「功能介绍」能力卡片：含热点事件跟进与影响分析（关联个股与走势对照）；已移除「新闻与资讯聚合」条目；另含每日汇总推送、持仓关联解读等能力说明（能力导向表述、移除可信卡）。
+- [改进] C 端营销首页主标语调整为「AI 赋能 · 智能平权」，并围绕赋能与智能平权重写导语。
+- [改进] C 端营销首页强化品牌与主标语、删除冗长访问说明，并弱化「仅自选股」表述；顶栏副文案改为「多市场 · AI 复盘与研究与决策辅助」。
+- [改进] C 端「问股」对齐工作台能力：SSE 流式对话、策略单选、`/api/v1/agent/skills|chat/sessions` 会话列表与删除、`?stock=name=recordId` 追问上下文、导出会话/单条 Markdown、发往通知；浅色雪球风布局（桌面侧栏 / 移动端抽屉）。
+- [改进] C 端 Shell 顶栏「退出登录」改为用户名触发下拉菜单：跳转账户页锚点（名字与资料 / 头像 / 登录密码，占位说明）及退出登录；支持点击外侧与 Escape 收起。
+- [改进] C 端门户注册用户新增必填字段「用户名」（2～128 字符），持久化至 `portal_users.username`；`/auth/status` 返回 `userName`；SQLite 存量库启动时自动 `ALTER`/回填占位。
+- [改进] C 端邮箱注册/登录：`PORTAL_USERS_ENABLED` 开关已移除；`/api/v1/auth/portal/*` 常驻。仅当 `ADMIN_AUTH_ENABLED` 时网关校验 `/api/v1/*`，接受管理员会话或门户 Cookie；未开启管理员认证时 API 仍匿名可访问。（`/auth/status` 中 `portalAuthEnabled` 恒为 true，`portalLoggedIn`/`userEmail` 反映门户 Cookie。）
+- [改进] C 端登录与邮箱注册合并为 `/user/login` 单页（`?tab=register` 打开注册）；顶栏单项「登录 / 注册」；移除 C 端管理员口令入口与管理页 `dsa-user` 内对已删除 `RegisterPage.tsx`；旧路径 `/user/register` 重定向至上述页。
+- [改进] C 端营销区拆分为子路由并复用雪球风顶栏：`/` 首页、`/features`、`/pricing`、`/reviews`、`/performance`、`/login`；深链未登录先经 `/login` 再回跳。
+- [改进] C 端定价页：免费 / ¥19 / ¥49 / ¥99 四档对比表补充具象配额（AI 次数、自选只数、留存天数等），并纳入每日分析推送、榜单摘要推送、异动条数与支持 SLA 等指标（以运营公示为准）。
 - [改进] Web 浅色主题对比度优化（参考高信息密度股票站风格）：提升文字/边框/悬浮与输入控件对比；新增统一 `ui-tab-pill` 与 `ui-option-chip` 高对比样式并应用于榜单扫描与评分历史；信号摘要标签与状态条强化可读性，设置分类激活态对比提升。
 - [修复] Web 侧边栏新增「组合选股」入口后，图标兼容性问题导致前端构建失败并回退旧静态包；已替换为当前 `lucide-react` 版本可用图标，确保入口可见。
 - [新功能] 新增组合选股后端策略接口 `GET /api/v1/insights/signal-digest/portfolio-selection`：按方案A执行 Top4 概念板块、每板块 Top5 候选、20 选 12（按比例配额且每板块至少2只），并返回板块强度、配额与入选原因。

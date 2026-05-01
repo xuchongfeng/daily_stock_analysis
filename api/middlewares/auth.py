@@ -13,12 +13,16 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth import COOKIE_NAME, is_auth_enabled, verify_session
+from src.portal_auth import PORTAL_COOKIE_NAME, verify_portal_session_token
 
 logger = logging.getLogger(__name__)
 
 EXEMPT_PATHS = frozenset({
     "/api/v1/auth/login",
     "/api/v1/auth/status",
+    "/api/v1/auth/portal/register",
+    "/api/v1/auth/portal/login",
+    "/api/v1/auth/portal/logout",
     "/api/health",
     "/health",
     "/docs",
@@ -34,7 +38,7 @@ def _path_exempt(path: str) -> bool:
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Require valid session for /api/v1/* when auth is enabled."""
+    """仅在 ADMIN_AUTH_ENABLED 时对 /api/v1/* 要求会话；认可管理员 Cookie 或 C 端邮箱门户 Cookie。"""
 
     async def dispatch(
         self,
@@ -51,8 +55,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if not path.startswith("/api/v1/"):
             return await call_next(request)
 
-        cookie_val = request.cookies.get(COOKIE_NAME)
-        if not cookie_val or not verify_session(cookie_val):
+        ac = request.cookies.get(COOKIE_NAME)
+        ok_admin = bool(ac and verify_session(ac))
+
+        pc = request.cookies.get(PORTAL_COOKIE_NAME)
+        ok_portal = bool(pc and verify_portal_session_token(pc) is not None)
+
+        combined = ok_admin or ok_portal
+
+        if not combined:
             return JSONResponse(
                 status_code=401,
                 content={
@@ -67,8 +78,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 def add_auth_middleware(app):
     """Add auth middleware to protect API routes.
 
-    The middleware is always registered; whether auth is enforced is determined
-    at request time by is_auth_enabled() so the decision stays consistent across
-    any runtime configuration reload.
+    Portal (C /user) cookies never open API protection by themselves:
+    ADMIN_AUTH_ENABLED gates /api/v1/*; portal or admin cookie may satisfy it.
     """
     app.add_middleware(AuthMiddleware)

@@ -11,6 +11,9 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from api.deps import get_system_config_service
+from src.repositories.portal_users_repo import get_portal_user_by_id
+from src.portal_auth import PORTAL_COOKIE_NAME, verify_portal_session_token
+from src.storage import DatabaseManager
 from src.auth import (
     COOKIE_NAME,
     SESSION_MAX_AGE_HOURS_DEFAULT,
@@ -154,6 +157,20 @@ def _set_session_cookie(response: Response, session_value: str, request: Request
     )
 
 
+def _portal_user_public(uid: int) -> tuple[str | None, str | None]:
+    """Return (email, display_username) for status JSON."""
+    mgr = DatabaseManager.get_instance()
+    sess = mgr.get_session()
+    try:
+        row = get_portal_user_by_id(sess, uid)
+        if not row:
+            return None, None
+        name = getattr(row, "username", "") or ""
+        return row.email, name.strip()
+    finally:
+        sess.close()
+
+
 def _get_auth_status_dict(request: Request | None = None) -> dict:
     """Helper to build consistent auth status response body."""
     auth_enabled = is_auth_enabled()
@@ -161,6 +178,16 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
     if auth_enabled and request:
         cookie_val = request.cookies.get(COOKIE_NAME)
         logged_in = verify_session(cookie_val) if cookie_val else False
+
+    portal_logged_in = False
+    portal_email: str | None = None
+    portal_user_name: str | None = None
+    if request:
+        raw_pc = request.cookies.get(PORTAL_COOKIE_NAME)
+        uid_i = verify_portal_session_token(raw_pc) if raw_pc else None
+        if uid_i is not None:
+            portal_logged_in = True
+            portal_email, portal_user_name = _portal_user_public(uid_i)
 
     # setupState determination:
     # - enabled: auth is active
@@ -179,6 +206,10 @@ def _get_auth_status_dict(request: Request | None = None) -> dict:
         "passwordSet": _password_set_for_response(auth_enabled),
         "passwordChangeable": is_password_changeable() if auth_enabled else False,
         "setupState": setup_state,
+        "portalAuthEnabled": True,
+        "portalLoggedIn": portal_logged_in,
+        "userEmail": portal_email,
+        "userName": portal_user_name,
     }
 
 

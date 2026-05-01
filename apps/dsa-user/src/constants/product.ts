@@ -2,4 +2,4 @@
 export const APP_DISPLAY_NAME = 'AI复盘助手';
 
 /** 顶栏副文案，可与产品名组合展示 */
-export const APP_TAGLINE = '自选股与持仓复盘';
+export const APP_TAGLINE = '多市场 · AI 复盘与研究与决策辅助';

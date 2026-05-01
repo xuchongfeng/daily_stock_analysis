@@ -7,9 +7,13 @@ export function HomePage() {
   return (
     <div className="page-stack">
       <section className="hero-block">
-        <h1 className="hero-title">{APP_DISPLAY_NAME}</h1>
+        <p className="hero-kicker">{APP_DISPLAY_NAME}</p>
+        <h1 className="hero-title">AI 赋能 · 智能平权</h1>
         <p className="hero-lead">
-          面向自选股与持仓的 AI 复盘与决策辅助。先通过下方入口了解能力边界与方案；开启访问控制后，请前往「登录」进入今日、自选、问股等功能。
+          <strong>以 AI 放大研究带宽、压低专业工具的使用门槛</strong>
+          ：把复杂行情与研报线索，整理成可追问、可追溯的链路，让个人与小微团队也能接近机构级的信息组织与推演方式——这是我们的「智能平权」主张。
+          产品覆盖<strong> A 股、港股与美股 </strong>
+          ，贯通大盘与板块语境、标的叙事、量价与风险提示，并支持自然语言的<strong>问答与策略讨论</strong>；无论盯自选、管组合还是从市场广度里找机会，都能落到同一套工作台里。
         </p>
         <div className="hero-cta">
           <Link to="/features" className="btn-cta primary">
@@ -29,7 +33,7 @@ export function HomePage() {
         <div className="link-card-grid">
           <Link to="/features" className="link-card">
             <h3>功能介绍</h3>
-            <p>今日、自选、问股、持仓、发现、复盘等模块说明与适用场景。</p>
+            <p>今日总览、自选与持仓、问股问答、发现与复盘等模块，覆盖看盘、研究与回顾全链路。</p>
             <span className="link-card-more">查看</span>
           </Link>
           <Link to="/pricing" className="link-card">
