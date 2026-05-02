@@ -24,6 +24,7 @@ import {
   resolveChatFollowUpContext,
   sanitizeFollowUpStockCode,
   sanitizeFollowUpStockName,
+  stripChatFollowUpSearchParams,
 } from '../utils/chatFollowUp';
 import { isNearBottom } from '../utils/chatScroll';
 
@@ -55,6 +56,8 @@ export function ChatPage() {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [selectedSkill, setSelectedSkill] = useState<string>('');
   const [showSkillDesc, setShowSkillDesc] = useState<string | null>(null);
+  /** 策略区展开；选完一项后折叠以腾出消息区高度 */
+  const [skillsBarExpanded, setSkillsBarExpanded] = useState(false);
   const [expandedThinking, setExpandedThinking] = useState<Set<string>>(new Set());
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -77,10 +80,6 @@ export function ChatPage() {
   const isMountedRef = useRef(true);
 
   useEffect(() => {
-    document.title = '问股';
-  }, []);
-
-  useEffect(() => {
     const timers = copyResetTimerRef.current;
     return () => {
       if (sendToastTimerRef.current !== null) {
@@ -91,6 +90,15 @@ export function ChatPage() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    if (!skillsBarExpanded) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') setSkillsBarExpanded(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [skillsBarExpanded]);
 
   useEffect(() => () => {
     isMountedRef.current = false;
@@ -190,6 +198,16 @@ export function ChatPage() {
     (q) => availableSkillIds.size === 0 || availableSkillIds.has(q.skill),
   );
 
+  const selectedSkillLabel =
+    selectedSkill === ''
+      ? '通用分析'
+      : skills.find((s) => s.id === selectedSkill)?.name ?? selectedSkill;
+
+  const handleSkillPick = useCallback((skillId: string) => {
+    setSelectedSkill(skillId);
+    setSkillsBarExpanded(false);
+  }, []);
+
   const handleStartNewChat = useCallback(() => {
     followUpContextRef.current = null;
     requestScrollToBottom('auto');
@@ -228,7 +246,7 @@ export function ChatPage() {
     const recordId = parseFollowUpRecordId(searchParams.get('recordId'));
 
     if (!stock) {
-      setSearchParams({}, { replace: true });
+      setSearchParams((prev) => stripChatFollowUpSearchParams(prev), { replace: true });
       return;
     }
 
@@ -254,7 +272,7 @@ export function ChatPage() {
         setIsFollowUpContextLoading(false);
       }
     });
-    setSearchParams({}, { replace: true });
+    setSearchParams((prev) => stripChatFollowUpSearchParams(prev), { replace: true });
   }, [searchParams, setSearchParams]);
 
   const handleSend = useCallback(
@@ -290,7 +308,7 @@ export function ChatPage() {
   };
 
   const handleQuickQuestion = (q: (typeof QUICK_QUESTIONS)[0]) => {
-    setSelectedSkill(q.skill);
+    handleSkillPick(q.skill);
     void handleSend(q.label, q.skill);
   };
 
@@ -571,6 +589,80 @@ export function ChatPage() {
         ) : null}
 
         <section className="chat-main card">
+          {skills.length > 0 ? (
+            <div
+              className={cx('chat-skills-bar', !skillsBarExpanded && 'is-collapsed')}
+              role="toolbar"
+              aria-label="分析策略"
+            >
+              <div className="chat-skills-compact">
+                <button
+                  type="button"
+                  className="chat-skills-collapse-toggle"
+                  onClick={() => setSkillsBarExpanded((v) => !v)}
+                  aria-expanded={skillsBarExpanded}
+                  aria-controls="chat-skills-panel"
+                  id="chat-skills-summary-btn"
+                >
+                  <span className="chat-skills-label-inline">策略</span>
+                  <span className="chat-skills-current-name">{selectedSkillLabel}</span>
+                  <span className={cx('chat-skills-chevron', skillsBarExpanded && 'is-open')} aria-hidden />
+                </button>
+              </div>
+              {skillsBarExpanded ? (
+                <div
+                  className="chat-skills-panel"
+                  id="chat-skills-panel"
+                  role="region"
+                  aria-labelledby="chat-skills-summary-btn"
+                >
+                  <div className="chat-skills-radios">
+                    <label className="chat-skill-label">
+                      <input
+                        type="radio"
+                        name="skill"
+                        value=""
+                        checked={selectedSkill === ''}
+                        onChange={() => handleSkillPick('')}
+                      />
+                      <span>通用分析</span>
+                    </label>
+                    {skills.map((s) => (
+                      <label
+                        key={s.id}
+                        className="chat-skill-label"
+                        onMouseEnter={() => setShowSkillDesc(s.id)}
+                        onMouseLeave={() => setShowSkillDesc(null)}
+                        onFocus={() => setShowSkillDesc(s.id)}
+                        onBlur={() => setShowSkillDesc(null)}
+                      >
+                        <input
+                          type="radio"
+                          name="skill"
+                          value={s.id}
+                          checked={selectedSkill === s.id}
+                          onChange={() => handleSkillPick(s.id)}
+                        />
+                        <span>{s.name}</span>
+                        {showSkillDesc === s.id && s.description ? (
+                          <span className="chat-skill-tooltip" role="tooltip">
+                            <strong>{s.name}</strong>
+                            {s.description}
+                          </span>
+                        ) : null}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="chat-skills-panel-footer">
+                    <button type="button" className="chat-skills-fold-btn" onClick={() => setSkillsBarExpanded(false)}>
+                      收起
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div
             className="chat-messages-scroll"
             ref={messagesViewportRef}
@@ -672,43 +764,6 @@ export function ChatPage() {
             {isFollowUpContextLoading ? (
               <div className="chat-alert chat-alert-info chat-alert-compact" role="status">
                 正在加载历史报告上下文…
-              </div>
-            ) : null}
-
-            {skills.length > 0 ? (
-              <div className="chat-skills">
-                <span className="chat-skills-label">策略</span>
-                <div className="chat-skills-radios">
-                  <label className="chat-skill-label">
-                    <input type="radio" name="skill" value="" checked={selectedSkill === ''} onChange={() => setSelectedSkill('')} />
-                    <span>通用分析</span>
-                  </label>
-                  {skills.map((s) => (
-                    <label
-                      key={s.id}
-                      className="chat-skill-label"
-                      onMouseEnter={() => setShowSkillDesc(s.id)}
-                      onMouseLeave={() => setShowSkillDesc(null)}
-                      onFocus={() => setShowSkillDesc(s.id)}
-                      onBlur={() => setShowSkillDesc(null)}
-                    >
-                      <input
-                        type="radio"
-                        name="skill"
-                        value={s.id}
-                        checked={selectedSkill === s.id}
-                        onChange={() => setSelectedSkill(s.id)}
-                      />
-                      <span>{s.name}</span>
-                      {showSkillDesc === s.id && s.description ? (
-                        <span className="chat-skill-tooltip" role="tooltip">
-                          <strong>{s.name}</strong>
-                          {s.description}
-                        </span>
-                      ) : null}
-                    </label>
-                  ))}
-                </div>
               </div>
             ) : null}
 

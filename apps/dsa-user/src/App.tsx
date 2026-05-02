@@ -14,7 +14,7 @@ import { gatewayRequiresLogin, isGatewayLoggedIn } from './api/authApi';
 import { MarketingLayout } from './components/MarketingLayout';
 import { ShellLayout } from './components/ShellLayout';
 import { AccountPage } from './pages/AccountPage';
-import { ChatPage } from './pages/ChatPage';
+import { ChatHubPage } from './pages/ChatHubPage';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { PortfolioPage } from './pages/PortfolioPage';
 import { ReviewPage } from './pages/ReviewPage';
@@ -108,7 +108,7 @@ function AppRoutes() {
       <Route element={<SessionShell />}>
         <Route path="today" element={<TodayPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
-        <Route path="chat" element={<ChatPage />} />
+        <Route path="chat" element={<ChatHubPage />} />
         <Route path="portfolio" element={<PortfolioPage />} />
         <Route path="discover" element={<DiscoverPage />} />
         <Route path="review" element={<ReviewPage />} />

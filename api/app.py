@@ -228,6 +228,11 @@ def create_app(
                 return FileResponse(user_static_dir / "index.html")
 
             if not has_admin and has_user:
+                # C 端独立部署时，股票自动补全索引放在 static-user 根目录
+                if full_path == "stocks.index.json":
+                    user_index = user_static_dir / "stocks.index.json"
+                    if user_index.is_file():
+                        return FileResponse(user_index, media_type="application/json")
                 return JSONResponse(
                     status_code=404,
                     content={"error": "not_found", "message": f"Path /{full_path} not found"},

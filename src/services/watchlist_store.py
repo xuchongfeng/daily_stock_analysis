@@ -107,6 +107,21 @@ def load_watchlist_codes(path: Optional[Path] = None) -> List[str]:
     return list(load_watchlist_file(path)["codes"])
 
 
+def build_normalized_watchlist_payload(
+    codes: List[str],
+    labels: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Canonical codes/labels blob (writes to file **or** portal_users.watchlist_json)."""
+    norm_codes = _normalize_codes([str(x) for x in codes if x is not None])
+    norm_labels = _normalize_labels(norm_codes, labels)
+    return {
+        "version": _SCHEMA_VERSION,
+        "codes": norm_codes,
+        "labels": norm_labels,
+        "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    }
+
+
 def save_watchlist(
     codes: List[str],
     labels: Optional[Dict[str, Any]] = None,
@@ -114,14 +129,7 @@ def save_watchlist(
 ) -> Dict[str, Any]:
     """Persist codes (canonical, deduped, capped). Returns saved payload."""
     p = path or resolved_watchlist_path()
-    norm_codes = _normalize_codes([str(x) for x in codes if x is not None])
-    norm_labels = _normalize_labels(norm_codes, labels)
-    payload = {
-        "version": _SCHEMA_VERSION,
-        "codes": norm_codes,
-        "labels": norm_labels,
-        "updated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-    }
+    payload = build_normalized_watchlist_payload(codes, labels)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(p.suffix + ".tmp")
     body = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"

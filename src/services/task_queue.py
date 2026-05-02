@@ -71,9 +71,11 @@ class TaskInfo:
     completed_at: Optional[datetime] = None
     original_query: Optional[str] = None
     selection_source: Optional[str] = None
-    
+    portal_user_id: Optional[int] = None
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert task info into an API-friendly dictionary."""
+        # 不包含 portal_user_id，避免向 SSE 订阅端泄漏归属信息
         return {
             "task_id": self.task_id,
             "stock_code": self.stock_code,
@@ -89,7 +91,7 @@ class TaskInfo:
             "original_query": self.original_query,
             "selection_source": self.selection_source,
         }
-    
+
     def copy(self) -> 'TaskInfo':
         """Create a shallow copy of the task information."""
         return TaskInfo(
@@ -107,6 +109,7 @@ class TaskInfo:
             completed_at=self.completed_at,
             original_query=self.original_query,
             selection_source=self.selection_source,
+            portal_user_id=self.portal_user_id,
         )
 
 
@@ -300,6 +303,7 @@ class AnalysisTaskQueue:
         selection_source: Optional[str] = None,
         report_type: str = "detailed",
         force_refresh: bool = False,
+        portal_user_id: Optional[int] = None,
     ) -> TaskInfo:
         """
         Submit a single analysis task.
@@ -329,6 +333,7 @@ class AnalysisTaskQueue:
             selection_source=selection_source,
             report_type=report_type,
             force_refresh=force_refresh,
+            portal_user_id=portal_user_id,
         )
         if duplicates:
             raise duplicates[0]
@@ -343,6 +348,7 @@ class AnalysisTaskQueue:
         report_type: str = "detailed",
         force_refresh: bool = False,
         notify: bool = True,
+        portal_user_id: Optional[int] = None,
     ) -> Tuple[List[TaskInfo], List[DuplicateTaskError]]:
         """
         Submit analysis tasks in batch.
@@ -379,6 +385,7 @@ class AnalysisTaskQueue:
                     report_type=report_type,
                     original_query=original_query,
                     selection_source=selection_source,
+                    portal_user_id=portal_user_id,
                 )
                 self._tasks[task_id] = task_info
                 self._analyzing_stocks[dedupe_key] = task_id
@@ -567,6 +574,12 @@ class AnalysisTaskQueue:
             def _on_progress(progress: int, message: str) -> None:
                 self.update_task_progress(task_id, progress, message)
 
+            task_portal_uid: Optional[int] = None
+            with self._data_lock:
+                _t = self._tasks.get(task_id)
+                if _t is not None:
+                    task_portal_uid = _t.portal_user_id
+
             result = service.analyze_stock(
                 stock_code=stock_code,
                 report_type=report_type,
@@ -574,6 +587,7 @@ class AnalysisTaskQueue:
                 query_id=task_id,
                 send_notification=notify,
                 progress_callback=_on_progress,
+                portal_user_id=task_portal_uid,
             )
             
             if result:

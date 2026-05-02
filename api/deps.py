@@ -10,7 +10,7 @@ API 依赖注入模块
 3. 提供服务层依赖
 """
 
-from typing import Generator
+from typing import Generator, Optional
 
 from fastapi import Request
 from sqlalchemy.orm import Session
@@ -60,6 +60,20 @@ def get_database_manager() -> DatabaseManager:
         DatabaseManager: 数据库管理器单例对象
     """
     return DatabaseManager.get_instance()
+
+
+def optional_portal_user_id(request: Request) -> Optional[int]:
+    """
+    从门户 Cookie 解析当前登录用户 ID；无有效会话时返回 None。
+    用于分析写入归属与历史列表 ``mine`` 筛选。
+    """
+    from src.portal_auth import PORTAL_COOKIE_NAME, verify_portal_session_token
+
+    pc = request.cookies.get(PORTAL_COOKIE_NAME)
+    if not pc:
+        return None
+    uid = verify_portal_session_token(pc)
+    return uid if isinstance(uid, int) else None
 
 
 def get_system_config_service(request: Request) -> SystemConfigService:

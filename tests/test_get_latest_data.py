@@ -180,6 +180,36 @@ class GetLatestDataTestCase(unittest.TestCase):
         self.assertEqual(by_date[base_date].data_source, "batch-2")
         self.assertAlmostEqual(by_date[base_date + timedelta(days=2)].close, 122.0, places=6)
 
+    def test_get_latest_stock_daily_trade_date_none_when_empty(self) -> None:
+        self.assertIsNone(self.db.get_latest_stock_daily_trade_date("600519"))
+        self.assertIsNone(self.db.get_latest_stock_daily_trade_date(""))
+
+    def test_get_latest_stock_daily_trade_date_max_date(self) -> None:
+        base_date = date(2026, 2, 1)
+        for i in range(3):
+            self.db.save_daily_data(
+                pd.DataFrame(
+                    [
+                        {
+                            "date": base_date + timedelta(days=i),
+                            "open": 10.0,
+                            "high": 11.0,
+                            "low": 9.0,
+                            "close": 10.5,
+                            "volume": 1.0,
+                            "amount": 10.0,
+                            "pct_chg": 1.0,
+                        }
+                    ]
+                ),
+                "600519",
+                data_source="test",
+            )
+        self.assertEqual(
+            self.db.get_latest_stock_daily_trade_date("600519"),
+            base_date + timedelta(days=2),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

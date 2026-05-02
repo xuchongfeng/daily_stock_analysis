@@ -23,10 +23,10 @@ import re
 from datetime import datetime
 from typing import Optional, Union, Dict, Any
 
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from api.deps import get_config_dep
+from api.deps import get_config_dep, optional_portal_user_id
 from api.v1.schemas.analysis import (
     AnalyzeRequest,
     AnalysisResultResponse,
@@ -141,10 +141,13 @@ def _resolve_and_normalize_input(raw_value: str) -> str:
 )
 def trigger_analysis(
         request: AnalyzeRequest,
+        http_request: Request,
         config: Config = Depends(get_config_dep)
 ) -> Union[AnalysisResultResponse, JSONResponse]:
     """
     触发股票分析
+
+    若请求携带有效门户 Cookie，分析入库时会写入 ``portal_user_id``，供 C 端历史「仅看我提交的」筛选。
     
     启动 AI 智能分析任务，支持单只或多只股票批量分析
     
@@ -166,6 +169,7 @@ def trigger_analysis(
         HTTPException: 409 - 股票正在分析中
         HTTPException: 500 - 分析失败
     """
+    portal_uid = optional_portal_user_id(http_request)
     # 校验请求参数
     stock_codes = []
     if request.stock_code:
@@ -228,15 +232,16 @@ def trigger_analysis(
                     "message": "同步模式仅支持单只股票分析，请使用 async_mode=true 进行批量分析"
                 }
             )
-        return _handle_sync_analysis(stock_codes[0], request)
+        return _handle_sync_analysis(stock_codes[0], request, portal_uid)
 
     # Async mode submits one task per stock.
-    return _handle_async_analysis_batch(stock_codes, request)
+    return _handle_async_analysis_batch(stock_codes, request, portal_uid)
 
 
 def _handle_async_analysis_batch(
     stock_codes: list,
-    request: AnalyzeRequest
+    request: AnalyzeRequest,
+    portal_user_id: Optional[int],
 ) -> JSONResponse:
     """
     Handle asynchronous analysis requests, including batch submission.
@@ -262,6 +267,7 @@ def _handle_async_analysis_batch(
         report_type=request.report_type,
         force_refresh=request.force_refresh,
         notify=notify,
+        portal_user_id=portal_user_id,
     )
 
     accepted_tasks, duplicate_errors = task_queue.submit_tasks_batch(**submit_kwargs)
@@ -324,7 +330,8 @@ def _handle_async_analysis_batch(
 
 def _handle_sync_analysis(
     stock_code: str,
-    request: AnalyzeRequest
+    request: AnalyzeRequest,
+    portal_user_id: Optional[int],
 ) -> AnalysisResultResponse:
     """
     处理同步分析请求
@@ -344,6 +351,7 @@ def _handle_sync_analysis(
             force_refresh=request.force_refresh,
             query_id=query_id,
             send_notification=getattr(request, "notify", True),
+            portal_user_id=portal_user_id,
         )
 
         if result is None:

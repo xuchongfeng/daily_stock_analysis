@@ -38,6 +38,15 @@ export function sanitizeFollowUpStockName(stockName: string | null): string | nu
   return normalized;
 }
 
+/** 从 URL 移除追问参数（stock/name/recordId），保留 tab 等其它查询项 */
+export function stripChatFollowUpSearchParams(prev: URLSearchParams): URLSearchParams {
+  const n = new URLSearchParams(prev);
+  n.delete('stock');
+  n.delete('name');
+  n.delete('recordId');
+  return n;
+}
+
 export function parseFollowUpRecordId(recordId: string | null): number | undefined {
   if (!recordId || !/^\d+$/.test(recordId)) {
     return undefined;

@@ -9,7 +9,7 @@
 2. 定义分析报告完整模型
 """
 
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +43,26 @@ class HistoryItem(BaseModel):
                 "created_at": "2024-01-01T12:00:00"
             }
         }
+
+
+class LatestAnalysisSummaryItem(BaseModel):
+    """单只股票最近一条分析摘要（自选等场景）"""
+
+    stock_code: str = Field(..., description="数据库中记录的股票代码")
+    sentiment_score: Optional[int] = Field(None, description="情绪/综合评分")
+    sentiment_label: Optional[str] = Field(None, description="评分对应标签（随报告语言本地化）")
+    operation_advice: Optional[str] = Field(None, description="操作建议/买入评级类结论（已本地化）")
+    concept_tags: List[str] = Field(default_factory=list, description="关联概念板块名称")
+    analyzed_at: Optional[str] = Field(None, description="该条分析记录创建时间 ISO 字符串")
+
+
+class LatestAnalysisSummariesResponse(BaseModel):
+    """按代码批量查询最近分析摘要"""
+
+    items: Dict[str, LatestAnalysisSummaryItem] = Field(
+        default_factory=dict,
+        description='键为标准化大写代码（如 "600519"、"AAPL"），无历史记录的股票不含对应键',
+    )
 
 
 class HistoryListResponse(BaseModel):

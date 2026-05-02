@@ -80,6 +80,7 @@ class TestAnalysisIntegration:
         assert kwargs["report_type"] == "detailed"
         assert kwargs["force_refresh"] is False
         assert kwargs["notify"] is True
+        assert kwargs.get("portal_user_id") is None
 
     def test_trigger_analysis_batch_deduplication(self, client, mock_task_queue):
         """Test de-duplication across different formats (600519 and 600519.SH)."""

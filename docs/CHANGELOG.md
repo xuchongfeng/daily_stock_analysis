@@ -11,11 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [新功能] 个股日线入库：`DatabaseManager.get_latest_stock_daily_trade_date`、`src/services/stock_daily_sync_service` 增量/全量同步至 ``stock_daily``；运维脚本 `scripts/sync_stock_daily.py`（支持 `--codes` / `--stock-list`、`--full`、环境变量 `STOCK_DAILY_SYNC_LOOKBACK_DAYS`）。建议定时任务每日盘后执行，供后续 K 线图读库降低实时 API 压力。
+- [改进] C 端分析工作台报告详情（全量面板）：行情与结论区前置；底部折叠展示报告元数据、上下文快照与原始 JSON（默认收起）；关联板块/概念为多标签换行；财报与分红仍为展开区块。
+- [修复] C 端分析工作台顶栏股票输入外包自动补全容器后，输入框恢复横向拉满（`width: 100%` + 容器 `flex: 1 1 0`）。
+- [改进] 仅配置 `DEEPSEEK_API_KEY` 且未设置 `LITELLM_MODEL` 时，默认主模型由 `deepseek/deepseek-chat` 调整为 `deepseek/deepseek-v4-pro`；Agent 侧为 `deepseek-v4-pro` / `deepseek-v4-flash` 启用与官方一致的 thinking `extra_body`。
+- [改进] C 端分析工作台顶栏股票输入接入与管理端相同的 ``stocks.index.json`` 本地模糊搜索与键盘选择；构建时尽量拷贝索引至 ``static-user/``；仅部署 C 端静态时由 FastAPI 根路径提供该 JSON。
+- [改进] C 端分析工作台左侧列表默认 ``mine=true`` 仅展示门户当前用户提交的分析记录；支持关键词 ``q`` 筛选代码/名称；API 触发分析时写入 ``analysis_history.portal_user_id``。
+- [改进] C 端「分析工作台」补齐左右分栏样式：左侧股票列表（含进行中的任务）可滚动，右侧报告详情独立滚动；大屏固定侧栏、窄屏沿用抽屉。
+- [改进] C 端「问股」路由 `/user/chat` 增加顶栏 Tab：默认「分析工作台」（与管理端同类能力），可切换到「问股」策略对话；追问 AI 仍带入 `tab=chat` 与 stock 参数。
+- [新功能] `GET /api/v1/history/latest-summaries`：按自选等场景批量返回各股「最近一条」分析摘要（评分、操作建议、概念板块）；C 端自选表增加对应列展示。
 - [新功能] 恢复 CLI `--user-ui` 与 `src/user_frontend.py`（`apps/dsa-user` → `static-user/`）；FastAPI 挂载 C 端至 `/user/`、根路径在无管理端产物时可重定向至 `/user/`，CORS 增加 5174；新增 `scripts/dev_dsa_user.sh`。
 - [新功能] C 端（`apps/dsa-user`）恢复为可构建的 Vite 工程：未登录且开启 `ADMIN_AUTH_ENABLED` 时展示落地页（功能介绍、定价/评价/回测示例占位与登录）；登录后进入原有功能 Tab；未开启认证时访问 `/user/` 直接进入应用。
 - [改进] C 端「功能介绍」能力卡片：含热点事件跟进与影响分析（关联个股与走势对照）；已移除「新闻与资讯聚合」条目；另含每日汇总推送、持仓关联解读等能力说明（能力导向表述、移除可信卡）。
 - [改进] C 端营销首页主标语调整为「AI 赋能 · 智能平权」，并围绕赋能与智能平权重写导语。
 - [改进] C 端营销首页强化品牌与主标语、删除冗长访问说明，并弱化「仅自选股」表述；顶栏副文案改为「多市场 · AI 复盘与研究与决策辅助」。
+- [改进] C 端问股主列顶部固定展示「策略」选择条，滚动消息时保持不变；底部输入区仅保留告警与发送。
+- [修复] `/api/v1/watchlist`：存在有效门户 Cookie 时读写 `portal_users.watchlist_json`（每门户用户自选），与全局 `watchlist.json`/管理员 CLI 链路隔离。
+- [改进] C 端自选页展示当前账户自选列表与移除操作；Shell 挂载时按门户/管理员会话重拉自选，避免与他人列表串台。
+- [改进] C 端「今日」信号摘要 Top K 支持 10 / 50 / 100。
+- [改进] C 端「今日」对齐工作台信号摘要：`/api/v1/insights/signal-digest` 聚合（含异步任务轮询）、快照日期与快照列表、筛选与 AI 叙事、个股表（摘要悬停摘录 / 雪球链 / 加入自选）、概念与板块卡片；雪球风浅色样式。
+- [改进] C 端问股「策略」区默认单行折叠展示当前所选，点击展开全部策略；选定策略、「收起」按钮或 Escape 后折叠。
+- [改进] C 端问股主列顶部固定展示「策略」选择条（不随消息滚动），底部仅保留告警与输入发送。
 - [改进] C 端「问股」对齐工作台能力：SSE 流式对话、策略单选、`/api/v1/agent/skills|chat/sessions` 会话列表与删除、`?stock=name=recordId` 追问上下文、导出会话/单条 Markdown、发往通知；浅色雪球风布局（桌面侧栏 / 移动端抽屉）。
 - [改进] C 端 Shell 顶栏「退出登录」改为用户名触发下拉菜单：跳转账户页锚点（名字与资料 / 头像 / 登录密码，占位说明）及退出登录；支持点击外侧与 Escape 收起。
 - [改进] C 端门户注册用户新增必填字段「用户名」（2～128 字符），持久化至 `portal_users.username`；`/auth/status` 返回 `userName`；SQLite 存量库启动时自动 `ALTER`/回填占位。

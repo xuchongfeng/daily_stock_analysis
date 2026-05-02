@@ -59,6 +59,8 @@ _AUTO_THINKING_MODELS: List[str] = ["deepseek-reasoner", "deepseek-r1", "qwq"]
 # Models that need explicit opt-in via extra_body; payload decoupled from model name.
 _OPT_IN_THINKING_MODELS: Dict[str, dict] = {
     "deepseek-chat": {"thinking": {"type": "enabled"}},
+    "deepseek-v4-pro": {"thinking": {"type": "enabled"}},
+    "deepseek-v4-flash": {"thinking": {"type": "enabled"}},
 }
 
 # Custom model pricing for models not in LiteLLM's built-in price list
@@ -117,7 +119,7 @@ def get_thinking_extra_body(model: str) -> Optional[dict]:
       These models automatically return reasoning_content in API responses; sending
       extra_body would cause 400 because the API already enables thinking by default.
       Return None to avoid duplicate activation.
-    - Opt-in models (_OPT_IN_THINKING_MODELS: deepseek-chat): Return the activation
+    - Opt-in models (_OPT_IN_THINKING_MODELS: deepseek-chat, deepseek-v4-pro, ...): Return the activation
       payload to explicitly enable thinking mode.
     - All other models: Return None (no thinking mode).
     """

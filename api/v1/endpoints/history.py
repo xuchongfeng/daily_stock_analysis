@@ -10,16 +10,18 @@
 """
 
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Body
 
-from api.deps import get_database_manager
+from api.deps import get_database_manager, optional_portal_user_id
 from api.v1.schemas.history import (
     HistoryListResponse,
     HistoryItem,
     DeleteHistoryRequest,
     DeleteHistoryResponse,
+    LatestAnalysisSummariesResponse,
+    LatestAnalysisSummaryItem,
     NewsIntelItem,
     NewsIntelResponse,
     AnalysisReport,
@@ -58,7 +60,11 @@ router = APIRouter()
         500: {"description": "服务器错误", "model": ErrorResponse},
     },
     summary="获取历史分析列表",
-    description="分页获取历史分析记录摘要，支持按股票代码和日期范围筛选"
+    description=(
+        "分页获取历史分析记录摘要，支持按股票代码和日期范围筛选。"
+        "``mine=true`` 时仅返回当前门户 Cookie 对应用户提交的分析（需已登录）；"
+        "``q`` 为代码或名称模糊匹配。"
+    ),
 )
 def get_history_list(
     stock_code: Optional[str] = Query(None, description="股票代码筛选"),
@@ -66,6 +72,9 @@ def get_history_list(
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
     page: int = Query(1, ge=1, description="页码（从 1 开始）"),
     limit: int = Query(20, ge=1, le=100, description="每页数量"),
+    mine: bool = Query(False, description="仅当前门户用户提交的记录"),
+    q: Optional[str] = Query(None, description="股票代码或名称关键词（模糊）"),
+    portal_uid: Optional[int] = Depends(optional_portal_user_id),
     db_manager: DatabaseManager = Depends(get_database_manager)
 ) -> HistoryListResponse:
     """
@@ -93,7 +102,10 @@ def get_history_list(
             start_date=start_date,
             end_date=end_date,
             page=page,
-            limit=limit
+            limit=limit,
+            mine_only=mine,
+            portal_user_id=portal_uid,
+            search_q=q,
         )
         
         # 转换为响应模型
@@ -172,6 +184,54 @@ def delete_history_records(
                 "error": "internal_error",
                 "message": f"删除历史记录失败: {str(e)}"
             }
+        )
+
+
+@router.get(
+    "/latest-summaries",
+    response_model=LatestAnalysisSummariesResponse,
+    responses={
+        200: {"description": "按代码返回最近一条分析摘要"},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    },
+    summary="批量获取最近分析摘要",
+    description=(
+        "按股票代码批量查询其在分析历史中「创建时间最新」的一条记录摘要："
+        "评分、操作建议与概念板块名。用于自选等列表展示。"
+        "传入 `codes` 查询参数（可重复）或逗号分隔的单个 `codes`。"
+    ),
+)
+def get_latest_analysis_summaries(
+    codes: List[str] = Query(
+        default_factory=list,
+        description="股票代码；可重复 `?codes=A&codes=B`，或与逗号合用",
+        alias="codes",
+    ),
+    db_manager: DatabaseManager = Depends(get_database_manager),
+) -> LatestAnalysisSummariesResponse:
+    flat: List[str] = []
+    for part in codes or []:
+        for seg in str(part).split(","):
+            s = seg.strip()
+            if s:
+                flat.append(s)
+
+    try:
+        service = HistoryService(db_manager)
+        raw_items = service.get_latest_summaries_for_codes(flat, max_codes=200)
+        items = {
+            k: LatestAnalysisSummaryItem(**v)
+            for k, v in raw_items.items()
+        }
+        return LatestAnalysisSummariesResponse(items=items)
+    except Exception as e:
+        logger.error(f"批量查询最近分析摘要失败: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "internal_error",
+                "message": f"批量查询最近分析摘要失败: {str(e)}",
+            },
         )
 
 

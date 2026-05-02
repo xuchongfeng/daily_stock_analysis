@@ -20,6 +20,7 @@ from src.report_language import (
     get_bias_status_emoji,
     get_localized_stock_name,
     get_report_labels,
+    get_sentiment_label,
     get_signal_level,
     localize_bias_status,
     localize_chip_health,
@@ -67,7 +68,11 @@ class HistoryService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         page: int = 1,
-        limit: int = 20
+        limit: int = 20,
+        *,
+        mine_only: bool = False,
+        portal_user_id: Optional[int] = None,
+        search_q: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Get history analysis list.
@@ -101,6 +106,18 @@ class HistoryService:
             
             # Calculate offset
             offset = (page - 1) * limit
+
+            portal_filter: Optional[int] = None
+            if mine_only:
+                if portal_user_id is None:
+                    return {"total": 0, "items": []}
+                portal_filter = portal_user_id
+
+            sq: Optional[str] = None
+            if search_q is not None:
+                s = str(search_q).strip()
+                if s:
+                    sq = s[:64]
             
             # Use new paginated query method
             records, total = self.db.get_analysis_history_paginated(
@@ -108,7 +125,9 @@ class HistoryService:
                 start_date=start_dt,
                 end_date=end_dt,
                 offset=offset,
-                limit=limit
+                limit=limit,
+                portal_user_id=portal_filter,
+                search_q=sq,
             )
 
             code_list = [str((record.code or "")).strip() for record in records if str((record.code or "")).strip()]
@@ -138,6 +157,79 @@ class HistoryService:
         except Exception as e:
             logger.error(f"查询历史列表失败: {e}", exc_info=True)
             return {"total": 0, "items": []}
+
+    def get_latest_summaries_for_codes(
+        self,
+        stock_codes: List[str],
+        *,
+        max_codes: int = 200,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        批量返回每只股票「最近一条」分析摘要（评分、操作建议、概念板块名）。
+
+        响应字典的 key 为代码大写形式，便于前端与不同大小写的自选代码对齐。
+        """
+        max_codes = max(1, min(int(max_codes or 200), 500))
+        raw = [str(c or "").strip() for c in (stock_codes or []) if str(c or "").strip()]
+        if len(raw) > max_codes:
+            raw = raw[:max_codes]
+
+        expand: set[str] = set()
+        for s in raw:
+            expand.add(s)
+            su = s.upper()
+            if su != s:
+                expand.add(su)
+        if not expand:
+            return {}
+
+        rows = self.db.get_latest_analysis_per_codes(sorted(expand))
+        by_upper: Dict[str, Any] = {}
+        for rec in rows:
+            u = str(rec.code or "").strip().upper()
+            if not u:
+                continue
+            prev = by_upper.get(u)
+            if prev is None:
+                by_upper[u] = rec
+                continue
+            pt = getattr(prev, "created_at", None) or datetime.min
+            nt = getattr(rec, "created_at", None) or datetime.min
+            if nt > pt:
+                by_upper[u] = rec
+
+        if not by_upper:
+            return {}
+
+        concept_tags_by_code = self.db.get_concept_tags_by_codes(
+            list(by_upper.keys()),
+            per_stock_limit=10,
+        )
+
+        items: Dict[str, Dict[str, Any]] = {}
+        for u, rec in by_upper.items():
+            raw_result = parse_json_field(rec.raw_result)
+            report_language = normalize_report_language(
+                (raw_result or {}).get("report_language") if isinstance(raw_result, dict) else None
+            )
+            score = rec.sentiment_score
+            sentiment_label = (
+                get_sentiment_label(score, report_language)
+                if score is not None
+                else None
+            )
+            items[u] = {
+                "stock_code": str(rec.code or "").strip(),
+                "sentiment_score": score,
+                "sentiment_label": sentiment_label,
+                "operation_advice": localize_operation_advice(
+                    rec.operation_advice,
+                    report_language,
+                ),
+                "concept_tags": concept_tags_by_code.get(u, []),
+                "analyzed_at": rec.created_at.isoformat() if rec.created_at else None,
+            }
+        return items
 
     def _resolve_record(self, record_id: str):
         """

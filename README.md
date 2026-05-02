@@ -122,7 +122,7 @@
 | `OPENAI_VISION_MODEL` | 图片识别专用模型（部分第三方模型不支持图像；不填则用 `OPENAI_MODEL`） | 可选 |
 | `OLLAMA_API_BASE` | Ollama 本地服务地址（如 `http://localhost:11434`），本地/Docker 部署时使用，**不要**用 `OPENAI_BASE_URL` 配置 Ollama，详见 [LLM 配置指南 - Ollama](docs/LLM_CONFIG_GUIDE.md#示例-4使用-ollama-本地模型) | 可选 |
 
-> 注：AI 优先级 Gemini > Anthropic > OpenAI（含 AIHubmix）> Ollama，至少配置一个。`AIHUBMIX_KEY` 无需配置 `OPENAI_BASE_URL`，系统自动适配。图片识别需 Vision 能力模型。DeepSeek 思考模式（deepseek-reasoner、deepseek-r1、qwq、deepseek-chat）按模型名自动识别，无需额外配置。**Ollama 本地模型**（无需 API Key）必须使用 `OLLAMA_API_BASE`，误用 `OPENAI_BASE_URL` 会导致 404。
+> 注：AI 推断优先级 Gemini > Anthropic > DeepSeek（`DEEPSEEK_API_KEY`）> OpenAI（含 AIHubmix）> …，至少配置一种可用密钥。仅配置 `DEEPSEEK_API_KEY` 且未设置 `LITELLM_MODEL` 时，主模型默认为 `deepseek/deepseek-v4-pro`。`AIHUBMIX_KEY` 无需配置 `OPENAI_BASE_URL`，系统自动适配。图片识别需 Vision 能力模型。DeepSeek 思考模式（deepseek-reasoner、deepseek-r1、qwq、deepseek-chat、deepseek-v4-pro、deepseek-v4-flash 等）按模型名自动识别，无需额外配置。**Ollama 本地模型**（无需 API Key）必须使用 `OLLAMA_API_BASE`，误用 `OPENAI_BASE_URL` 会导致 404。
 
 <details>
 <summary><b>通知渠道配置</b>（点击展开，至少配置一个）</summary>
@@ -283,8 +283,8 @@ LLM_CHANNELS=primary
 LLM_PRIMARY_PROTOCOL=openai
 LLM_PRIMARY_BASE_URL=https://api.deepseek.com/v1
 LLM_PRIMARY_API_KEY=sk-xxxxxxxx
-LLM_PRIMARY_MODELS=deepseek-chat
-LITELLM_MODEL=openai/deepseek-chat
+LLM_PRIMARY_MODELS=deepseek-v4-pro
+LITELLM_MODEL=openai/deepseek-v4-pro
 ```
 
 保存后也可以在 Web 设置页继续编辑同一组字段；不会要求额外配置文件。

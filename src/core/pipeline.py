@@ -75,6 +75,7 @@ class StockAnalysisPipeline:
         query_source: Optional[str] = None,
         save_context_snapshot: Optional[bool] = None,
         progress_callback: Optional[Callable[[int, str], None]] = None,
+        portal_user_id: Optional[int] = None,
     ):
         """
         初始化调度器
@@ -92,6 +93,7 @@ class StockAnalysisPipeline:
             self.config.save_context_snapshot if save_context_snapshot is None else save_context_snapshot
         )
         self.progress_callback = progress_callback
+        self.portal_user_id = portal_user_id
         
         # 初始化各模块
         self.db = get_db()
@@ -519,6 +521,7 @@ class StockAnalysisPipeline:
                         rank_in_batch=(history_extra or {}).get("rank_in_batch"),
                         ref_change_pct=(history_extra or {}).get("ref_change_pct"),
                         ref_trade_volume=(history_extra or {}).get("ref_trade_volume"),
+                        portal_user_id=self.portal_user_id,
                     )
                 except Exception as e:
                     logger.warning(f"{stock_name}({code}) 保存分析历史失败: {e}")
@@ -872,6 +875,7 @@ class StockAnalysisPipeline:
                         rank_in_batch=(history_extra or {}).get("rank_in_batch"),
                         ref_change_pct=(history_extra or {}).get("ref_change_pct"),
                         ref_trade_volume=(history_extra or {}).get("ref_trade_volume"),
+                        portal_user_id=self.portal_user_id,
                     )
                 except Exception as e:
                     logger.warning(f"[{code}] 保存 Agent 分析历史失败: {e}")

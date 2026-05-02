@@ -255,6 +255,9 @@ class AnalysisHistory(Base):
     # 成交量榜扫描时的参考成交量（东财快照或 Tushare daily 的 vol，单位与数据源一致）
     ref_trade_volume = Column(Float, nullable=True)
 
+    # C 端门户用户提交的分析归属（批量扫描/CLI 等可为空）
+    portal_user_id = Column(Integer, nullable=True, index=True)
+
     created_at = Column(DateTime, default=datetime.now, index=True)
 
     __table_args__ = (
@@ -285,6 +288,7 @@ class AnalysisHistory(Base):
             'rank_in_batch': self.rank_in_batch,
             'ref_change_pct': self.ref_change_pct,
             'ref_trade_volume': self.ref_trade_volume,
+            'portal_user_id': self.portal_user_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -750,6 +754,8 @@ class PortalUser(Base):
     username = Column(String(128), nullable=False, index=True)
     password_hash = Column(String(512), nullable=False)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
+    # JSON: { version, codes, labels, updated_at }，与同构 watchlist.json 一致；仅存门户会话用户侧自选
+    watchlist_json = Column(Text, nullable=True)
 
     __table_args__ = (Index("ix_portal_users_created", "created_at"),)
 
@@ -835,6 +841,8 @@ class DatabaseManager:
             self._ensure_sqlite_analysis_history_top_movers_columns()
             self._ensure_sqlite_signal_digest_snapshot_columns()
             self._ensure_sqlite_portal_users_username_column()
+            self._ensure_sqlite_portal_users_watchlist_json_column()
+            self._ensure_sqlite_analysis_history_portal_user_id_column()
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")
@@ -958,6 +966,28 @@ class DatabaseManager:
         except Exception as exc:
             logger.warning("补齐 analysis_history 榜单扫描字段失败（可忽略若已最新）: %s", exc)
 
+    def _ensure_sqlite_analysis_history_portal_user_id_column(self) -> None:
+        """SQLite 存量库补齐 analysis_history.portal_user_id。"""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(analysis_history)")).fetchall()
+            existing = {r[1] for r in rows}
+            if "portal_user_id" in existing:
+                return
+            with self._engine.begin() as conn:
+                conn.execute(text("ALTER TABLE analysis_history ADD COLUMN portal_user_id INTEGER"))
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_analysis_history_portal_user_id "
+                        "ON analysis_history (portal_user_id)"
+                    )
+                )
+            logger.info("SQLite analysis_history 已补齐字段: portal_user_id")
+        except Exception as exc:
+            logger.warning("补齐 analysis_history.portal_user_id 失败（可忽略若已最新）: %s", exc)
+
     def _ensure_sqlite_signal_digest_snapshot_columns(self) -> None:
         """为已有 SQLite 库补齐 signal_digest_snapshots 字段（create_all 不会 ALTER）。"""
         if not self._is_sqlite_engine:
@@ -1006,6 +1036,24 @@ class DatabaseManager:
             logger.info("SQLite portal_users 已补齐字段: username")
         except Exception as exc:
             logger.warning("补齐 portal_users.username 失败（可忽略若已最新）: %s", exc)
+
+    def _ensure_sqlite_portal_users_watchlist_json_column(self) -> None:
+        """SQLite 存量库补齐 portal_users.watchlist_json（门户用户自选，与全局 watchlist.json 隔离）。"""
+        if not self._is_sqlite_engine:
+            return
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(portal_users)")).fetchall()
+            if not rows:
+                return
+            existing = {r[1] for r in rows}
+            if "watchlist_json" in existing:
+                return
+            with self._engine.begin() as conn:
+                conn.execute(text("ALTER TABLE portal_users ADD COLUMN watchlist_json TEXT"))
+            logger.info("SQLite portal_users 已补齐字段: watchlist_json")
+        except Exception as exc:
+            logger.warning("补齐 portal_users.watchlist_json 失败（可忽略若已最新）: %s", exc)
 
     def _run_write_transaction(
         self,
@@ -1167,6 +1215,20 @@ class DatabaseManager:
             ).scalars().all()
             
             return list(results)
+
+    def get_latest_stock_daily_trade_date(self, code: str) -> Optional[date]:
+        """
+        返回指定股票在 stock_daily 表中已入库的最新交易日（按 date 最大值）。
+
+        用于增量同步 K 线：从 ``latest + 1 自然日`` 起拉取直至今日，再由数据源过滤交易日。
+        """
+        if not (code or "").strip():
+            return None
+        with self.get_session() as session:
+            max_d = session.execute(
+                select(func.max(StockDaily.date)).where(StockDaily.code == code.strip())
+            ).scalar_one_or_none()
+            return max_d
 
     def save_news_intel(
         self,
@@ -1439,6 +1501,7 @@ class DatabaseManager:
         rank_in_batch: Optional[int] = None,
         ref_change_pct: Optional[float] = None,
         ref_trade_volume: Optional[float] = None,
+        portal_user_id: Optional[int] = None,
     ) -> int:
         """
         保存分析结果历史记录
@@ -1476,6 +1539,7 @@ class DatabaseManager:
                         rank_in_batch=rank_in_batch,
                         ref_change_pct=ref_change_pct,
                         ref_trade_volume=ref_trade_volume,
+                        portal_user_id=portal_user_id,
                         created_at=datetime.now(),
                     )
                 )
@@ -2168,7 +2232,9 @@ class DatabaseManager:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         offset: int = 0,
-        limit: int = 20
+        limit: int = 20,
+        portal_user_id: Optional[int] = None,
+        search_q: Optional[str] = None,
     ) -> Tuple[List[AnalysisHistory], int]:
         """
         分页查询分析历史记录（带总数）
@@ -2190,6 +2256,21 @@ class DatabaseManager:
             
             if code:
                 conditions.append(AnalysisHistory.code == code)
+            if portal_user_id is not None:
+                conditions.append(AnalysisHistory.portal_user_id == portal_user_id)
+            if search_q:
+                esc = (
+                    search_q.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_")
+                )
+                pattern = f"%{esc}%"
+                conditions.append(
+                    or_(
+                        AnalysisHistory.code.like(pattern, escape="\\"),
+                        AnalysisHistory.name.like(pattern, escape="\\"),
+                    )
+                )
             if start_date:
                 # created_at >= start_date 00:00:00
                 conditions.append(AnalysisHistory.created_at >= datetime.combine(start_date, datetime.min.time()))
@@ -2215,6 +2296,44 @@ class DatabaseManager:
             results = session.execute(data_query).scalars().all()
             
             return list(results), total
+
+    def get_latest_analysis_per_codes(self, code_variants: List[str]) -> List[AnalysisHistory]:
+        """
+        在给定代码集合上，按 ``analysis_history.code`` 精确分组，各取 ``created_at`` 最新一条。
+
+        用于自选等场景批量拉取「各股最近一条分析」摘要；调用方若需大小写归并，可在业务层再折叠。
+        """
+        seen: set[str] = set()
+        uniq: List[str] = []
+        for c in code_variants or []:
+            s = str(c or "").strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            uniq.append(s)
+        if not uniq:
+            return []
+
+        rn_subq = (
+            select(
+                AnalysisHistory.id.label("ah_id"),
+                func.row_number()
+                .over(
+                    partition_by=AnalysisHistory.code,
+                    order_by=desc(AnalysisHistory.created_at),
+                )
+                .label("rn"),
+            )
+            .where(AnalysisHistory.code.in_(uniq))
+        ).subquery()
+
+        with self.get_session() as session:
+            rows = session.execute(
+                select(AnalysisHistory)
+                .join(rn_subq, AnalysisHistory.id == rn_subq.c.ah_id)
+                .where(rn_subq.c.rn == 1)
+            ).scalars().all()
+        return list(rows)
 
     _MARKET_SCAN_BATCH_KINDS = ("top_movers_daily", "top_volume_daily")
 

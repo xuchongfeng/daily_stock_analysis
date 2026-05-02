@@ -1,10 +1,29 @@
 import type { ReactNode } from 'react';
+import { useEffect, useMemo } from 'react';
 
+import { useAuth } from '../auth/AuthContext';
 import { MAIN_NAV } from '../routes/nav';
+import { useWatchlistStore } from '../stores/watchlistStore';
 import { SiteBanner } from './SiteBanner';
 import { ShellUserMenu } from './ShellUserMenu';
 
 export function ShellLayout({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+  /** 门户 / 管理员会话切换时重拉自选来源（门户为每用户 DB，否则全局文件） */
+  const watchScopeKey = useMemo(
+    () =>
+      [
+        status?.portalLoggedIn === true ? '1' : '0',
+        status?.loggedIn === true ? '1' : '0',
+        status?.userEmail ?? '',
+      ].join('|'),
+    [status?.portalLoggedIn, status?.loggedIn, status?.userEmail],
+  );
+
+  useEffect(() => {
+    void useWatchlistStore.getState().fetch();
+  }, [watchScopeKey]);
+
   const appNav = MAIN_NAV.map((item) => ({
     to: item.to,
     label: item.label,
