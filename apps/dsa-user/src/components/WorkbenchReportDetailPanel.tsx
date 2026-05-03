@@ -1,7 +1,8 @@
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-import type { AnalysisReport, SectorRankingItem } from '../types/workbenchAnalysis';
+import { StockDailyKlineCard } from './StockDailyKlineCard';
+import type { AnalysisReport, ReportMeta, SectorRankingItem } from '../types/workbenchAnalysis';
 
 const EMPTY = '—';
 
@@ -203,6 +204,8 @@ export function WorkbenchReportDetailPanel({ report, reportLangZh }: WorkbenchRe
   };
 
   const { meta, summary, strategy, details } = report;
+  const metaAny = meta as ReportMeta & { stock_code?: string };
+  const klineStockCode = String(metaAny.stockCode ?? metaAny.stock_code ?? '').trim();
   const boards = normalizeBoards(details?.belongBoards);
   const sectors = normalizeSectorRankings(details?.sectorRankings);
 
@@ -292,6 +295,8 @@ export function WorkbenchReportDetailPanel({ report, reportLangZh }: WorkbenchRe
           ))}
         </dl>
       </section>
+
+      <StockDailyKlineCard stockCode={klineStockCode} reportLangZh={reportLangZh} strategy={strategy} />
 
       <section className="workbench-card-block workbench-detail-section">
         <h3 className="workbench-block-title">{L.news}</h3>

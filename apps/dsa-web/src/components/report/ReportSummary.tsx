@@ -4,6 +4,7 @@ import { ReportOverview } from './ReportOverview';
 import { ReportStrategy } from './ReportStrategy';
 import { ReportNews } from './ReportNews';
 import { ReportDetails } from './ReportDetails';
+import { StockDailyKlineCard } from './StockDailyKlineCard';
 import { getReportText, normalizeReportLanguage } from '../../utils/reportLanguage';
 
 interface ReportSummaryProps {
@@ -25,6 +26,8 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
   const recordId = report.meta.id;
 
   const { meta, summary, strategy, details } = report;
+  const metaAny = meta as typeof meta & { stock_code?: string };
+  const klineStockCode = String(metaAny.stockCode ?? metaAny.stock_code ?? '').trim();
   const reportLanguage = normalizeReportLanguage(meta.reportLanguage);
   const text = getReportText(reportLanguage);
   const modelUsed = (meta.modelUsed || '').trim();
@@ -44,6 +47,8 @@ export const ReportSummary: React.FC<ReportSummaryProps> = ({
 
       {/* 策略点位区 */}
       <ReportStrategy strategy={strategy} language={reportLanguage} />
+
+      <StockDailyKlineCard stockCode={klineStockCode} language={reportLanguage} strategy={strategy} />
 
       {/* 资讯区 */}
       <ReportNews recordId={recordId} limit={8} language={reportLanguage} />

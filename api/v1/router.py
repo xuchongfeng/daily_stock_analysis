@@ -15,6 +15,7 @@ from api.v1.endpoints import (
     analysis,
     auth,
     portal_auth,
+    portal_account,
     history,
     stocks,
     backtest,
@@ -38,6 +39,8 @@ router.include_router(
 )
 
 router.include_router(portal_auth.router, prefix="/auth")
+
+router.include_router(portal_account.router, prefix="/auth/portal")
 
 router.include_router(
     agent.router,

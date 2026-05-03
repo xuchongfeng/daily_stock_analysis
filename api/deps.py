@@ -12,7 +12,7 @@ API 依赖注入模块
 
 from typing import Generator, Optional
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from src.storage import DatabaseManager
@@ -74,6 +74,17 @@ def optional_portal_user_id(request: Request) -> Optional[int]:
         return None
     uid = verify_portal_session_token(pc)
     return uid if isinstance(uid, int) else None
+
+
+def require_portal_user_id(request: Request) -> int:
+    """门户接口专用：无有效 ``dsa_portal_session`` 时返回 401。"""
+    uid = optional_portal_user_id(request)
+    if uid is None:
+        raise HTTPException(
+            status_code=401,
+            detail={"error": "portal_required", "message": "请先使用邮箱登录门户账号"},
+        )
+    return uid
 
 
 def get_system_config_service(request: Request) -> SystemConfigService:

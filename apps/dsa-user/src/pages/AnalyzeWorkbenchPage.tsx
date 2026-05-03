@@ -5,6 +5,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { AddToWatchlistCompact } from '../components/AddToWatchlistCompact';
 import { WorkbenchReportDetailPanel } from '../components/WorkbenchReportDetailPanel';
+import { recordPortalStockSearch } from '../api/portalAccount';
+import { useAuth } from '../auth/AuthContext';
 import { WorkbenchStockAutocomplete } from '../components/WorkbenchStockAutocomplete';
 import { formatParsedApiError, getParsedApiError } from '../api/error';
 import { workbenchHistoryApi } from '../api/workbenchHistory';
@@ -40,6 +42,7 @@ function WorkbenchBanner({ parsed, onDismiss }: { parsed: ParsedApiError; onDism
 
 export function AnalyzeWorkbenchPage() {
   const navigate = useNavigate();
+  const { status } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [markdownLoading, setMarkdownLoading] = useState(false);
@@ -329,6 +332,9 @@ export function AnalyzeWorkbenchPage() {
           onSubmit={(code, name, src) => {
             if (!isAnalyzing) handleStockQuerySubmit(code, name, src);
           }}
+          onAutocompletePick={
+            status?.portalLoggedIn ? () => void recordPortalStockSearch().catch(() => undefined) : undefined
+          }
           disabled={isAnalyzing}
           placeholder="输入股票代码或名称，如 600519、贵州茅台、AAPL"
           className="workbench-query-input"

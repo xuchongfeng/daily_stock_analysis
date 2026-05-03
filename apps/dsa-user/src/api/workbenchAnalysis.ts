@@ -1,6 +1,8 @@
 import { apiFetch } from './http';
 import { createApiError, parseApiError } from './error';
+import { toCamelCase } from '../utils/camel';
 import { toCamelCaseWorkbench } from '../utils/workbenchCamel';
+import type { TaskStatusBody } from '../types/analysisTask';
 import type { AnalysisRequest, AnalyzeAsyncResponse, AnalysisReport } from '../types/workbenchAnalysis';
 
 function throwHttpError(res: Response, raw: unknown): never {
@@ -60,6 +62,16 @@ export const workbenchAnalysisApi = {
     }
 
     return toCamelCaseWorkbench<AnalyzeAsyncResponse>(raw);
+  },
+
+  /** 轮询异步任务状态（嵌套 result 深度转 camelCase） */
+  getStatus: async (taskId: string): Promise<TaskStatusBody> => {
+    const res = await apiFetch(`/api/v1/analysis/status/${encodeURIComponent(taskId)}`);
+    const raw = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throwHttpError(res, raw);
+    }
+    return toCamelCase<TaskStatusBody>(raw);
   },
 
   getTaskStreamUrl: (): string => '/api/v1/analysis/tasks/stream',

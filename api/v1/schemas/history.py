@@ -52,6 +52,10 @@ class LatestAnalysisSummaryItem(BaseModel):
     sentiment_score: Optional[int] = Field(None, description="情绪/综合评分")
     sentiment_label: Optional[str] = Field(None, description="评分对应标签（随报告语言本地化）")
     operation_advice: Optional[str] = Field(None, description="操作建议/买入评级类结论（已本地化）")
+    analysis_summary_excerpt: Optional[str] = Field(
+        None,
+        description="核心洞察/分析摘要节选（纯文本，用于列表悬停展示评级依据）",
+    )
     concept_tags: List[str] = Field(default_factory=list, description="关联概念板块名称")
     analyzed_at: Optional[str] = Field(None, description="该条分析记录创建时间 ISO 字符串")
 

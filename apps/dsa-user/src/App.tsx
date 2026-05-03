@@ -16,7 +16,10 @@ import { ShellLayout } from './components/ShellLayout';
 import { AccountPage } from './pages/AccountPage';
 import { ChatHubPage } from './pages/ChatHubPage';
 import { DiscoverPage } from './pages/DiscoverPage';
-import { PortfolioPage } from './pages/PortfolioPage';
+import { PortfolioAccountDetailPage } from './pages/portfolio/PortfolioAccountDetailPage';
+import { PortfolioHubPage } from './pages/portfolio/PortfolioHubPage';
+import { PortfolioLedgerPage } from './pages/portfolio/PortfolioLedgerPage';
+import { PortfolioRiskPage } from './pages/portfolio/PortfolioRiskPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { TodayPage } from './pages/TodayPage';
 import { WatchlistPage } from './pages/WatchlistPage';
@@ -109,7 +112,12 @@ function AppRoutes() {
         <Route path="today" element={<TodayPage />} />
         <Route path="watchlist" element={<WatchlistPage />} />
         <Route path="chat" element={<ChatHubPage />} />
-        <Route path="portfolio" element={<PortfolioPage />} />
+        <Route path="portfolio" element={<Outlet />}>
+          <Route index element={<PortfolioHubPage />} />
+          <Route path="account/:accountId" element={<PortfolioAccountDetailPage />} />
+          <Route path="account/:accountId/ledger" element={<PortfolioLedgerPage />} />
+          <Route path="account/:accountId/risk" element={<PortfolioRiskPage />} />
+        </Route>
         <Route path="discover" element={<DiscoverPage />} />
         <Route path="review" element={<ReviewPage />} />
         <Route path="account" element={<AccountPage />} />

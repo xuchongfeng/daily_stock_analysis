@@ -95,28 +95,28 @@ export function ShellUserMenu() {
       {open ? (
         <div className="user-menu-dropdown" role="menu">
           <Link
-            to="/account#account-profile"
+            to="/account#profile"
             className="user-menu-item"
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            名字与资料
+            个人信息
           </Link>
           <Link
-            to="/account#account-avatar"
+            to="/account#notify"
             className="user-menu-item"
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            头像
+            订阅与通知
           </Link>
           <Link
-            to="/account#account-password"
+            to="/account#subscription"
             className="user-menu-item"
             role="menuitem"
             onClick={() => setOpen(false)}
           >
-            登录密码
+            我的套餐
           </Link>
           <div className="user-menu-sep" role="separator" />
           <button

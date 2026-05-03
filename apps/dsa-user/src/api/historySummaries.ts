@@ -5,6 +5,8 @@ export type LatestAnalysisSummaryItem = {
   sentiment_score: number | null;
   sentiment_label: string | null;
   operation_advice: string | null;
+  /** 核心洞察节选；悬停买入评级时展示依据 */
+  analysis_summary_excerpt?: string | null;
   concept_tags: string[];
   analyzed_at: string | null;
 };

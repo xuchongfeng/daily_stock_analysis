@@ -47,6 +47,19 @@ _ETF_SH_PREFIXES = ('51', '52', '56', '58')
 _ETF_SZ_PREFIXES = ('15', '16', '18')
 _ETF_ALL_PREFIXES = _ETF_SH_PREFIXES + _ETF_SZ_PREFIXES
 
+# TuShare 上交所常用指数 ts_code 为 000xxx.SH（与深市 A 股 000xxx.SZ 并存，如 000001）。
+# 股票列表若误带 SH 前缀（如 SH000301 东方盛虹），不可映射为 000301.SH，否则 daily 常返回空。
+TUSHARE_SH_INDEX_CODES_000_PREFIX = frozenset({
+    "000001",
+    "000016",
+    "000300",
+    "000905",
+    "000852",
+})
+
+# 沪市普通股 / 科创板代码前缀（用于纠正错误的 SZ 前缀）
+_TUSHARE_SH_EQ_PREFIXES = ('600', '601', '603', '605', '688')
+
 
 def _is_etf_code(stock_code: str) -> bool:
     """
@@ -375,8 +388,27 @@ class TushareFetcher(BaseFetcher):
         exchange_hint = self._detect_exchange_hint(raw_code)
 
         if exchange_hint == "SH":
+            if (
+                len(code) == 6
+                and code.isdigit()
+                and code.startswith("000")
+                and code not in TUSHARE_SH_INDEX_CODES_000_PREFIX
+            ):
+                logger.warning(
+                    "[Tushare] 忽略与深市 000xxx A 股冲突的 SH 前缀: raw=%r -> %s.SZ",
+                    raw_code,
+                    code,
+                )
+                return f"{code}.SZ"
             return f"{code}.SH"
         if exchange_hint == "SZ":
+            if len(code) == 6 and code.isdigit() and code.startswith(_TUSHARE_SH_EQ_PREFIXES):
+                logger.warning(
+                    "[Tushare] 忽略与沪市 A 股冲突的 SZ 前缀: raw=%r -> %s.SH",
+                    raw_code,
+                    code,
+                )
+                return f"{code}.SH"
             return f"{code}.SZ"
         if exchange_hint == "BJ":
             return f"{code}.BJ"
@@ -392,9 +424,9 @@ class TushareFetcher(BaseFetcher):
             return f"{code}.BJ"
         
         # Regular stocks
-        # Shanghai: 600xxx, 601xxx, 603xxx, 688xxx (STAR Market)
+        # Shanghai: 600xxx, 601xxx, 603xxx, 605xxx, 688xxx (STAR Market)
         # Shenzhen: 000xxx, 002xxx, 300xxx (ChiNext)
-        if code.startswith(('600', '601', '603', '688')):
+        if code.startswith(_TUSHARE_SH_EQ_PREFIXES):
             return f"{code}.SH"
         elif code.startswith(('000', '002', '300')):
             return f"{code}.SZ"

@@ -7,6 +7,7 @@
 - **增量**：若库中已有该代码数据，则仅请求 ``最新入库日期 + 1``～今日的区间；否则按 ``lookback_days`` 拉一段历史。
 - **全量**：``full=True`` 时忽略增量逻辑，按 ``lookback_days`` 重新拉取并覆盖重叠日期。
 - 定时任务建议每日收盘后运行 ``scripts/sync_stock_daily.py``（见脚本说明），与分析主流程解耦。
+- 数据源可选 ``STOCK_DAILY_SYNC_DATA_SOURCE=auto|tushare``（或脚本 ``--source``）；``tushare`` 时仅用 TuShare Pro，需 ``TUSHARE_TOKEN``。
 
 API ``GET /api/v1/stocks/{code}/history`` 当前仍可能直连数据源；后续可读库优先时再改 endpoints。
 """
@@ -14,6 +15,7 @@ API ``GET /api/v1/stocks/{code}/history`` 当前仍可能直连数据源；后�
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Optional
@@ -23,6 +25,40 @@ from data_provider.base import DataFetchError, DataFetcherManager, canonical_sto
 from src.storage import DatabaseManager, get_db
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_stock_daily_sync_data_source(explicit: Optional[str] = None) -> str:
+    """解析日线入库数据源关键字：来自 ``fetcher_source`` 参数或 ``STOCK_DAILY_SYNC_DATA_SOURCE``。"""
+    raw = (
+        explicit
+        if explicit is not None
+        else (os.getenv("STOCK_DAILY_SYNC_DATA_SOURCE") or "auto")
+    )
+    return (raw or "auto").strip().lower() or "auto"
+
+
+def build_stock_daily_fetcher_manager(source: Optional[str] = None) -> DataFetcherManager:
+    """
+    为 ``stock_daily`` 同步构造 ``DataFetcherManager``。
+
+    - ``auto``（默认）：与主流程一致的多源 failover。
+    - ``tushare``：仅使用 TuShare（需 ``TUSHARE_TOKEN``）；港股/美股日线是否可用以 TuShare 接口为准。
+    """
+    src = resolve_stock_daily_sync_data_source(source)
+    if src in ("auto", "default", ""):
+        return DataFetcherManager()
+    if src in ("tushare", "ts", "tusharefetcher"):
+        from data_provider.tushare_fetcher import TushareFetcher
+
+        ts = TushareFetcher()
+        if not ts.is_available():
+            raise DataFetchError(
+                "指定 tushare 数据源但 TuShare 不可用（请配置 TUSHARE_TOKEN）"
+            )
+        return DataFetcherManager(fetchers=[ts])
+    raise ValueError(
+        f"不支持的日线同步数据源 {src!r}；请使用 auto 或 tushare"
+    )
 
 
 @dataclass
@@ -54,6 +90,7 @@ def sync_stock_daily_bars(
     full: bool = False,
     db: Optional[DatabaseManager] = None,
     fetcher_manager: Optional[DataFetcherManager] = None,
+    fetcher_source: Optional[str] = None,
 ) -> StockDailySyncResult:
     """
     拉取单只股票日线并写入 ``stock_daily``。
@@ -63,7 +100,8 @@ def sync_stock_daily_bars(
         lookback_days: 无本地历史或 ``full=True`` 时，传给数据源的回溯自然日数量
         full: 为 True 时不做增量，直接按 lookback_days 拉取
         db: 数据库管理器，默认单例
-        fetcher_manager: 数据源管理器，默认新建实例
+        fetcher_manager: 数据源管理器；若传入则忽略 ``fetcher_source`` / 环境变量
+        fetcher_source: 未传 ``fetcher_manager`` 时生效：``auto`` 或 ``tushare``（亦可用 ``STOCK_DAILY_SYNC_DATA_SOURCE``）
 
     Returns:
         StockDailySyncResult
@@ -74,7 +112,11 @@ def sync_stock_daily_bars(
         return StockDailySyncResult(ok=False, code=raw or "?", error="empty_or_invalid_code")
 
     db = db or get_db()
-    manager = fetcher_manager or DataFetcherManager()
+    manager = (
+        fetcher_manager
+        if fetcher_manager is not None
+        else build_stock_daily_fetcher_manager(fetcher_source)
+    )
 
     today = date.today()
     lookback_days = max(int(lookback_days), 5)
@@ -154,9 +196,14 @@ def sync_many_stock_daily_bars(
     full: bool = False,
     db: Optional[DatabaseManager] = None,
     fetcher_manager: Optional[DataFetcherManager] = None,
+    fetcher_source: Optional[str] = None,
 ) -> list[StockDailySyncResult]:
     """顺序同步多只股票（避免数据源并发触顶）。"""
-    mgr = fetcher_manager or DataFetcherManager()
+    mgr = (
+        fetcher_manager
+        if fetcher_manager is not None
+        else build_stock_daily_fetcher_manager(fetcher_source)
+    )
     database = db or get_db()
     out: list[StockDailySyncResult] = []
     seen: set[str] = set()

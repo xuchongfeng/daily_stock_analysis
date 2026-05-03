@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import {
   fetchLatestSummariesForCodes,
   pickLatestSummary,
   type LatestAnalysisSummariesResponse,
 } from '../api/historySummaries';
+import { getParsedApiError } from '../api/error';
+import { workbenchAnalysisApi } from '../api/workbenchAnalysis';
+import { WatchlistScoreHover } from '../components/WatchlistScoreHover';
 import { useWatchlistStore } from '../stores/watchlistStore';
+import type { BatchTaskAcceptedResponse } from '../types/workbenchAnalysis';
 import { xueqiuStockHref } from '../utils/xueqiuStockHref';
+
+const MAX_WATCHLIST_BATCH = 50;
+
+type SortMode = 'default' | 'score_desc' | 'score_asc';
 
 export function WatchlistPage() {
   const codes = useWatchlistStore((s) => s.codes);
@@ -20,6 +29,9 @@ export function WatchlistPage() {
   const [snapshots, setSnapshots] = useState<LatestAnalysisSummariesResponse['items']>({});
   const [snapLoading, setSnapLoading] = useState(false);
   const [snapError, setSnapError] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('default');
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchHint, setBatchHint] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = '自选';
@@ -61,6 +73,56 @@ export function WatchlistPage() {
     };
   }, [loading, codes]);
 
+  const sortedCodes = useMemo(() => {
+    const list = [...codes];
+    if (sortMode === 'default') {
+      return list;
+    }
+    return list.sort((a, b) => {
+      const sa = pickLatestSummary(snapshots, a)?.sentiment_score;
+      const sb = pickLatestSummary(snapshots, b)?.sentiment_score;
+      const na = sa == null || !Number.isFinite(Number(sa)) ? null : Number(sa);
+      const nb = sb == null || !Number.isFinite(Number(sb)) ? null : Number(sb);
+      if (na == null && nb == null) return a.localeCompare(b);
+      if (na == null) return 1;
+      if (nb == null) return -1;
+      const cmp = sortMode === 'score_desc' ? nb - na : na - nb;
+      if (cmp !== 0) return cmp;
+      return a.localeCompare(b);
+    });
+  }, [codes, snapshots, sortMode]);
+
+  const runBatchAnalyze = useCallback(
+    async (notify: boolean) => {
+      if (codes.length === 0 || batchBusy) return;
+      setBatchBusy(true);
+      setBatchHint(null);
+      const list = codes.slice(0, MAX_WATCHLIST_BATCH);
+      try {
+        const res = await workbenchAnalysisApi.analyzeAsync({
+          stockCodes: list,
+          notify,
+          selectionSource: 'import',
+          reportType: 'detailed',
+        });
+        const batch = res as BatchTaskAcceptedResponse;
+        if (batch.accepted && Array.isArray(batch.accepted)) {
+          const dup = batch.duplicates?.length ?? 0;
+          setBatchHint(
+            `已提交 ${batch.accepted.length} 个分析任务${dup ? `，${dup} 只因队列中已有任务跳过` : ''}${notify ? '；已请求推送通知。' : '；未请求推送通知。'}`,
+          );
+        } else {
+          setBatchHint(notify ? '分析任务已提交（含推送请求）。' : '分析任务已提交。');
+        }
+      } catch (e) {
+        setBatchHint(getParsedApiError(e).message || '批量提交失败');
+      } finally {
+        setBatchBusy(false);
+      }
+    },
+    [batchBusy, codes],
+  );
+
   const onRemove = useCallback(
     async (code: string) => {
       setRemoving(code);
@@ -79,9 +141,6 @@ export function WatchlistPage() {
     <div className="stack watchlist-page">
       <header className="card watchlist-header">
         <h1 className="h1">自选</h1>
-        <p className="lead">
-          与后端同步；<strong>门户邮箱登录</strong>时为<strong>您个人</strong>的自选（与管理员工作台的全局自选文件隔离）。
-        </p>
         {updatedAt ? <p className="account-hint">最近更新：{updatedAt.replace('T', ' ').slice(0, 19)} UTC</p> : null}
       </header>
 
@@ -92,6 +151,46 @@ export function WatchlistPage() {
           <p className="lead">暂无自选。可在「今日」个股表或后续支持自选的页面中点击星标加入。</p>
         ) : (
           <div className="watchlist-table-wrap">
+            <div className="watchlist-toolbar">
+              <label className="watchlist-sort-label">
+                <span className="watchlist-sort-text">排序</span>
+                <select
+                  className="watchlist-sort-select"
+                  value={sortMode}
+                  onChange={(ev) => setSortMode(ev.target.value as SortMode)}
+                  aria-label="自选排序"
+                >
+                  <option value="default">默认顺序</option>
+                  <option value="score_desc">评分从高到低</option>
+                  <option value="score_asc">评分从低到高</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="watchlist-batch-btn"
+                disabled={batchBusy}
+                onClick={() => void runBatchAnalyze(false)}
+              >
+                {batchBusy ? '提交中…' : '批量分析'}
+              </button>
+              <button
+                type="button"
+                className="watchlist-batch-btn watchlist-batch-btn-primary"
+                disabled={batchBusy}
+                onClick={() => void runBatchAnalyze(true)}
+              >
+                {batchBusy ? '提交中…' : '批量分析并推送通知'}
+              </button>
+              <Link to="/chat" className="watchlist-batch-link">
+                在工作台查看任务进度 →
+              </Link>
+            </div>
+            {batchHint ? <p className="watchlist-batch-hint">{batchHint}</p> : null}
+            {codes.length > MAX_WATCHLIST_BATCH ? (
+              <p className="today-muted watchlist-snap-hint">
+                单次批量分析最多 {MAX_WATCHLIST_BATCH} 只，将按当前列表顺序提交前 {MAX_WATCHLIST_BATCH} 只。
+              </p>
+            ) : null}
             {snapError ? <p className="today-muted watchlist-snap-hint">{snapError}</p> : null}
             {snapLoading ? <p className="today-muted watchlist-snap-hint">正在加载评分与板块…</p> : null}
             <table className="watchlist-table">
@@ -106,7 +205,7 @@ export function WatchlistPage() {
                 </tr>
               </thead>
               <tbody>
-                {codes.map((code) => {
+                {sortedCodes.map((code) => {
                   const name = labels[code]?.trim() || '—';
                   const href = xueqiuStockHref(code);
                   const snap = pickLatestSummary(snapshots, code);
@@ -115,7 +214,10 @@ export function WatchlistPage() {
                       ? `${snap.sentiment_score}${snap.sentiment_label ? `（${snap.sentiment_label}）` : ''}`
                       : '—';
                   const advice = snap?.operation_advice?.trim() || '—';
+                  const excerpt = snap?.analysis_summary_excerpt?.trim();
                   const tags = snap?.concept_tags?.filter(Boolean) ?? [];
+                  const adviceTitle =
+                    excerpt && excerpt.length > 0 ? `${advice}\n\n【摘要】${excerpt}` : advice;
 
                   return (
                     <tr key={code}>
@@ -129,8 +231,19 @@ export function WatchlistPage() {
                           name
                         )}
                       </td>
-                      <td className="watchlist-score-cell">{scoreCell}</td>
-                      <td>{advice}</td>
+                      <td className="watchlist-score-cell">
+                        {snap?.sentiment_score != null ? (
+                          <WatchlistScoreHover
+                            stockCode={(snap.stock_code && snap.stock_code.trim()) || code}
+                            label={scoreCell}
+                          />
+                        ) : (
+                          scoreCell
+                        )}
+                      </td>
+                      <td className="watchlist-advice-cell" title={adviceTitle}>
+                        {advice}
+                      </td>
                       <td className="watchlist-tags-cell">
                         {tags.length ? (
                           <span className="watchlist-concept-tags">

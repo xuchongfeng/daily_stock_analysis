@@ -756,6 +756,11 @@ class PortalUser(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     # JSON: { version, codes, labels, updated_at }，与同构 watchlist.json 一致；仅存门户会话用户侧自选
     watchlist_json = Column(Text, nullable=True)
+    # 头像 URL（用户粘贴外链）；通知偏好 JSON；订阅档位；当月用量 JSON（搜索次数等）
+    avatar_url = Column(String(512), nullable=True)
+    notification_prefs_json = Column(Text, nullable=True)
+    plan_tier = Column(String(32), nullable=False, default="free")
+    usage_stats_json = Column(Text, nullable=True)
 
     __table_args__ = (Index("ix_portal_users_created", "created_at"),)
 
@@ -842,6 +847,7 @@ class DatabaseManager:
             self._ensure_sqlite_signal_digest_snapshot_columns()
             self._ensure_sqlite_portal_users_username_column()
             self._ensure_sqlite_portal_users_watchlist_json_column()
+            self._ensure_sqlite_portal_users_account_columns()
             self._ensure_sqlite_analysis_history_portal_user_id_column()
 
             self._initialized = True
@@ -1054,6 +1060,40 @@ class DatabaseManager:
             logger.info("SQLite portal_users 已补齐字段: watchlist_json")
         except Exception as exc:
             logger.warning("补齐 portal_users.watchlist_json 失败（可忽略若已最新）: %s", exc)
+
+    def _ensure_sqlite_portal_users_account_columns(self) -> None:
+        """SQLite 补齐门户账户扩展：头像、通知偏好、档位、用量统计。"""
+        if not self._is_sqlite_engine:
+            return
+        specs = (
+            ("avatar_url", "ALTER TABLE portal_users ADD COLUMN avatar_url VARCHAR(512)"),
+            ("notification_prefs_json", "ALTER TABLE portal_users ADD COLUMN notification_prefs_json TEXT"),
+            ("plan_tier", "ALTER TABLE portal_users ADD COLUMN plan_tier VARCHAR(32) DEFAULT 'free'"),
+            ("usage_stats_json", "ALTER TABLE portal_users ADD COLUMN usage_stats_json TEXT"),
+        )
+        try:
+            with self._engine.connect() as conn:
+                rows = conn.execute(text("PRAGMA table_info(portal_users)")).fetchall()
+            if not rows:
+                return
+            existing = {r[1] for r in rows}
+            for col, ddl in specs:
+                if col in existing:
+                    continue
+                with self._engine.begin() as conn:
+                    conn.execute(text(ddl))
+                logger.info("SQLite portal_users 已补齐字段: %s", col)
+                existing.add(col)
+            if "plan_tier" in existing:
+                with self._engine.begin() as conn:
+                    conn.execute(
+                        text(
+                            "UPDATE portal_users SET plan_tier = 'free' "
+                            "WHERE plan_tier IS NULL OR TRIM(COALESCE(plan_tier, '')) = ''"
+                        )
+                    )
+        except Exception as exc:
+            logger.warning("补齐 portal_users 账户扩展列失败（可忽略若已最新）: %s", exc)
 
     def _run_write_transaction(
         self,

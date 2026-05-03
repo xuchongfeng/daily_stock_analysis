@@ -11,7 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
-- [新功能] 个股日线入库：`DatabaseManager.get_latest_stock_daily_trade_date`、`src/services/stock_daily_sync_service` 增量/全量同步至 ``stock_daily``；运维脚本 `scripts/sync_stock_daily.py`（支持 `--codes` / `--stock-list`、`--full`、环境变量 `STOCK_DAILY_SYNC_LOOKBACK_DAYS`）。建议定时任务每日盘后执行，供后续 K 线图读库降低实时 API 压力。
+- [改进] C 端持仓明细页：顶部一行展示总收益（浮动+已实现合计）、总市值、总现金、汇率与成本口径；AI 体检入口并入个股列表卡片右上，体检结果表置于持仓表下方；回撤/止损摘要置于页面末行。
+- [改进] C 端持仓流水页：手工录入与券商 CSV 分两行展示；CSV 区增加说明与字段标签、宽松栅格与文件选择样式；事件记录仍独占整行。
+- [改进] C 端账户页改为左侧导航（个人信息 / 订阅与通知 / 我的套餐）、右侧详情区的两列布局；窄屏自动单列堆叠。
+- [改进] C 端持仓改为多路由：首页账户汇总表（总市值、持仓只数、盈亏、体检/推送偏好、流水与风控入口）；`/portfolio/account/:id` 个股明细与 AI 体检；`/ledger` 流水录入；`/risk` 回撤与止损明细（阈值只读说明）；偏好存 `localStorage`。
+- [新功能] C 端账户页 Tab：个人信息（用户名、头像 URL、邮箱只读、改密）、订阅与通知（邮件/钉钉/飞书 Webhook 等偏好）、我的套餐（档位与自然月用量）；新增 `GET/PATCH /api/v1/auth/portal/account`、`POST .../account/password`、`POST .../account/usage/stock-search`；工作台自动补全选中个股时上报搜索用量。
+- [新功能] C 端「持仓」页与管理端对齐：账户与视图切换、FIFO/均价快照、汇率刷新、持仓明细、集中度饼图、回撤与止损摘要、手工录入（交易/资金/公司行为）、券商 CSV 解析与导入、事件流水与删除、持仓 AI 批量体检（`workbenchAnalysisApi` + 任务轮询）及跳转工作台；新增 `api/portfolio.ts`、`types/portfolio.ts`、`recharts` 依赖与 `user-portfolio-*` 样式。
+- [改进] `workbenchAnalysisApi` 增加 `getStatus(taskId)` 供异步分析轮询。
+- [修复] C 端自选「最近评分」悬停：曲线请求使用 `latest-summaries` 返回的 canonical `stock_code`（与 DB 一致），避免自选代码写法与库内不一致时历史列表为空；迷你图用 portal + `position:fixed` 挂在 `document.body`，避免 `.watchlist-table-wrap` 横向滚动裁剪浮层导致只看到相邻「买入评级」列的 `title`（买入原因摘要）。
+- [改进] C 端自选页：移除顶部「与后端同步 / 个人自选与全局隔离」说明；工具栏支持按评分排序、批量分析、批量分析并推送通知（单次最多 50 只），并提供跳转工作台查看任务；「最近评分」悬停展示迷你评分曲线；「买入评级」悬停通过 `title` 展示摘要节选作为依据。
+- [改进] `GET /api/v1/history/latest-summaries` 单项增加可选字段 `analysis_summary_excerpt`（分析摘要压缩节选），供自选等场景展示评级依据。
+- [修复] 个股日 K 策略横线：解析价位前剔除 ``MA/EMA/SMA``、``日均线`` 及 ``5 10 20``、``5/10/20`` 等常见周期数字链；策略价位以彩色横线 + 右侧价格轴纯数字标签展示（与现价样式一致，无标题文案），下方不再重复策略文字说明。
+- [改进] 个股日 K：当 ``GET /api/v1/stocks/{code}/history`` 返回有效 ``volume`` 时，在图底部以 ``HistogramSeries`` 展示成交量（绿涨红跌、右轴 volume 缩写格式），主图与成交量区用 ``scaleMargins`` 分区；无成交量数据时保持原仅 K 线布局。
+- [改进] 个股日 K：在蜡烛图右轴叠加报告「策略点位」价位横线（理想买入 / 二次买入 / 止损 / 止盈分色；文案中至多解析两个正数作为区间低/高）；管理端 ``ReportSummary`` 与 C 端工作台报告详情传入同一 ``strategy`` 字段。
+- [改进] 个股日 K（管理端报告详情与 C 端工作台）：叠加 AI 评分折线（左轴），优先 ``GET /api/v1/market-scanner/stocks/{code}/volume-rating-series`` 与榜单扫描「评分历史」一致；该区间无成交量榜点位时回退 ``GET /api/v1/history`` 按日聚合；接口失败或无数据时仍仅展示 K 线。
+- [修复] TuShare 日线：`SH000301` 等误带的沪市前缀会使 `000301` 错映射为 `000301.SH`（上交所无该标的，daily 空表）；`_convert_stock_code` 对深市 `000xxx` A 股忽略冲突的 SH 前缀（上交所 `000xxx.SH` 仅保留已知指数码），并对误写的 `SZ` + 沪市代码前缀做对称纠正。
+- [改进] 个股日 K 线图支持切换时间区间：1 个月（31 自然日）、6 个月（180）、1 年（365），与管理端 / C 端组件联动同一 ``GET /api/v1/stocks/{code}/history?days=`` 上限。
+- [修复] C 端日 K 容器原先使用 ``display:none`` 易导致画布宽度为 0；改为占位尺寸 + ``visibility``，并对日线数据排序去重、图表创建增加容错；报告 meta 补充 ``stock_code`` / ``stockCode`` 双键回退。
+- [新功能] 个股报告详情（管理端 ``ReportSummary``、C 端 ``WorkbenchReportDetailPanel``）在策略点位下方展示日 K 线图；数据来自 ``GET /api/v1/stocks/{code}/history``，服务端优先读 ``stock_daily``，不足或过旧时再拉取数据源并入库。
+- [改进] 个股日线入库可选仅用 TuShare：`STOCK_DAILY_SYNC_DATA_SOURCE=tushare` 或 `scripts/sync_stock_daily.py --source tushare`（需 `TUSHARE_TOKEN`；港股/美股日线是否可用以 TuShare 接口为准）；默认仍为 `auto` 多源。
+- [新功能] 个股日线入库：`DatabaseManager.get_latest_stock_daily_trade_date`、`stock_daily_sync_service`、脚本 `scripts/sync_stock_daily.py`（`--codes` / `--stock-list` / `--all-markets cn,hk,us` 读 ``data/stock_list_*.csv``、可重复 `--csv`、`--full`、`--limit`、`--sleep-seconds`、环境变量 `STOCK_DAILY_SYNC_*`）；CSV 解析 `src/utils/stock_list_csv.py`。建议定时盘后跑；全市场前需 `fetch_tushare_stock_list.py` 并注意数据源限速。
 - [改进] C 端分析工作台报告详情（全量面板）：行情与结论区前置；底部折叠展示报告元数据、上下文快照与原始 JSON（默认收起）；关联板块/概念为多标签换行；财报与分红仍为展开区块。
 - [修复] C 端分析工作台顶栏股票输入外包自动补全容器后，输入框恢复横向拉满（`width: 100%` + 容器 `flex: 1 1 0`）。
 - [改进] 仅配置 `DEEPSEEK_API_KEY` 且未设置 `LITELLM_MODEL` 时，默认主模型由 `deepseek/deepseek-chat` 调整为 `deepseek/deepseek-v4-pro`；Agent 侧为 `deepseek-v4-pro` / `deepseek-v4-flash` 启用与官方一致的 thinking `extra_body`。

@@ -5,12 +5,17 @@ import os
 import tempfile
 import unittest
 from datetime import date, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
 from src.config import Config
-from src.services.stock_daily_sync_service import sync_stock_daily_bars
+from data_provider.base import DataFetchError
+
+from src.services.stock_daily_sync_service import (
+    build_stock_daily_fetcher_manager,
+    sync_stock_daily_bars,
+)
 from src.storage import DatabaseManager
 
 
@@ -110,6 +115,22 @@ class StockDailySyncServiceTestCase(unittest.TestCase):
         self.assertTrue(r.ok)
         self.assertTrue(r.skipped)
         mgr.get_daily_data.assert_not_called()
+
+
+class BuildStockDailyFetcherManagerTestCase(unittest.TestCase):
+    @patch("data_provider.tushare_fetcher.TushareFetcher.is_available", return_value=True)
+    def test_tushare_only_lists_single_fetcher(self, _mock_avail: MagicMock) -> None:
+        m = build_stock_daily_fetcher_manager("tushare")
+        self.assertEqual(m.available_fetchers(), ["TushareFetcher"])
+
+    @patch("data_provider.tushare_fetcher.TushareFetcher.is_available", return_value=False)
+    def test_tushare_unavailable_raises(self, _mock_avail: MagicMock) -> None:
+        with self.assertRaises(DataFetchError):
+            build_stock_daily_fetcher_manager("tushare")
+
+    def test_unknown_source_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            build_stock_daily_fetcher_manager("nosuch")
 
 
 if __name__ == "__main__":

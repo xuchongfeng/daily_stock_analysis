@@ -10,12 +10,48 @@
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Dict, Any, List
 
+from data_provider.base import DataFetcherManager, canonical_stock_code
+
 from src.repositories.stock_repo import StockRepository
+from src.storage import StockDaily
 
 logger = logging.getLogger(__name__)
+
+
+def _stock_daily_row_to_item(row: StockDaily) -> Dict[str, Any]:
+    d = row.date
+    date_str = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
+    return {
+        "date": date_str,
+        "open": float(row.open or 0),
+        "high": float(row.high or 0),
+        "low": float(row.low or 0),
+        "close": float(row.close or 0),
+        "volume": float(row.volume) if row.volume is not None else None,
+        "amount": float(row.amount) if row.amount is not None else None,
+        "change_percent": float(row.pct_chg) if row.pct_chg is not None else None,
+    }
+
+
+def _history_should_fetch_remote(
+    rows: List[StockDaily],
+    *,
+    requested_days: int,
+    end_date: date,
+) -> bool:
+    """本地 ``stock_daily`` 缺失、明显不足或过久未更新时，再走数据源拉取并入库。"""
+    if not rows:
+        return True
+    min_bars = max(10, min(int(requested_days), 365) // 4)
+    if len(rows) < min_bars:
+        return True
+    latest = rows[-1].date
+    if latest < end_date - timedelta(days=8):
+        return True
+    return False
 
 
 class StockService:
@@ -111,54 +147,56 @@ class StockService:
                 f"暂不支持 '{period}' 周期，目前仅支持 'daily'。"
                 "weekly/monthly 聚合功能将在后续版本实现。"
             )
-        
+
+        canon = canonical_stock_code(stock_code)
+        if not canon:
+            logger.warning("历史行情: 无效股票代码 %r", stock_code)
+            return {"stock_code": stock_code, "period": period, "data": []}
+
+        end_d = date.today()
+        start_d = end_d - timedelta(days=int(days))
+
         try:
-            # 调用数据获取器获取历史数据
-            from data_provider.base import DataFetcherManager
-            
-            manager = DataFetcherManager()
-            df, source = manager.get_daily_data(stock_code, days=days)
-            
-            if df is None or df.empty:
-                logger.warning(f"获取 {stock_code} 历史数据失败")
-                return {"stock_code": stock_code, "period": period, "data": []}
-            
-            # 获取股票名称
-            stock_name = manager.get_stock_name(stock_code)
-            
-            # 转换为响应格式
-            data = []
-            for _, row in df.iterrows():
-                date_val = row.get("date")
-                if hasattr(date_val, "strftime"):
-                    date_str = date_val.strftime("%Y-%m-%d")
-                else:
-                    date_str = str(date_val)
-                
-                data.append({
-                    "date": date_str,
-                    "open": float(row.get("open", 0)),
-                    "high": float(row.get("high", 0)),
-                    "low": float(row.get("low", 0)),
-                    "close": float(row.get("close", 0)),
-                    "volume": float(row.get("volume", 0)) if row.get("volume") else None,
-                    "amount": float(row.get("amount", 0)) if row.get("amount") else None,
-                    "change_percent": float(row.get("pct_chg", 0)) if row.get("pct_chg") else None,
-                })
-            
+            rows = self.repo.get_range(canon, start_d, end_d)
+            manager: Optional[DataFetcherManager] = None
+
+            if _history_should_fetch_remote(rows, requested_days=int(days), end_date=end_d):
+                try:
+                    manager = DataFetcherManager()
+                    df, source = manager.get_daily_data(canon, days=int(days))
+                    if df is not None and not df.empty:
+                        self.repo.save_dataframe(df, canon, source or "Unknown")
+                    rows = self.repo.get_range(canon, start_d, end_d)
+                except Exception as e:
+                    logger.warning(
+                        "历史行情: %s 远端补齐失败，使用本地已有数据: %s",
+                        canon,
+                        e,
+                        exc_info=True,
+                    )
+
+            if manager is None:
+                manager = DataFetcherManager()
+
+            stock_name = manager.get_stock_name(canon)
+            data = [_stock_daily_row_to_item(r) for r in rows]
+
+            if not data:
+                logger.warning("获取 %s 历史数据为空（本地与远端均无有效日线）", canon)
+
             return {
-                "stock_code": stock_code,
+                "stock_code": canon,
                 "stock_name": stock_name,
                 "period": period,
                 "data": data,
             }
-            
+
         except ImportError:
             logger.warning("DataFetcherManager 未找到，返回空数据")
-            return {"stock_code": stock_code, "period": period, "data": []}
+            return {"stock_code": canon, "period": period, "data": []}
         except Exception as e:
             logger.error(f"获取历史数据失败: {e}", exc_info=True)
-            return {"stock_code": stock_code, "period": period, "data": []}
+            return {"stock_code": canon, "period": period, "data": []}
     
     def _get_placeholder_quote(self, stock_code: str) -> Dict[str, Any]:
         """

@@ -12,6 +12,7 @@ Responsibilities:
 from __future__ import annotations
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple, TYPE_CHECKING
 
@@ -35,6 +36,20 @@ if TYPE_CHECKING:
     from src.analyzer import AnalysisResult
 
 logger = logging.getLogger(__name__)
+
+
+def _compact_summary_excerpt(text: Optional[str], max_len: int = 260) -> Optional[str]:
+    """将 analysis_summary 压成单行节选，供自选列表悬停展示。"""
+    if text is None:
+        return None
+    s = str(text).strip()
+    if not s:
+        return None
+    s = re.sub(r"\s+", " ", s)
+    if len(s) <= max_len:
+        return s
+    cut = s[: max_len - 1].rstrip(" ，。；,.")
+    return cut + "…"
 
 
 class MarkdownReportGenerationError(Exception):
@@ -225,6 +240,9 @@ class HistoryService:
                 "operation_advice": localize_operation_advice(
                     rec.operation_advice,
                     report_language,
+                ),
+                "analysis_summary_excerpt": _compact_summary_excerpt(
+                    getattr(rec, "analysis_summary", None)
                 ),
                 "concept_tags": concept_tags_by_code.get(u, []),
                 "analyzed_at": rec.created_at.isoformat() if rec.created_at else None,

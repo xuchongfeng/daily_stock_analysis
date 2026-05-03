@@ -13,6 +13,8 @@ export interface WorkbenchStockAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
   onSubmit: (code: string, name?: string, source?: 'manual' | 'autocomplete') => void;
+  /** 用户从候选列表选中股票时触发（用于门户个股搜索用量）；手动输入回车不调用 */
+  onAutocompletePick?: () => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
@@ -148,6 +150,7 @@ function WorkbenchStockAutocompleteInner({
   value,
   onChange,
   onSubmit,
+  onAutocompletePick,
   disabled = false,
   placeholder = '输入股票代码或名称，如 600519、贵州茅台、AAPL',
   className = 'workbench-query-input',
@@ -244,6 +247,7 @@ function WorkbenchStockAutocompleteInner({
           onChange(selected.displayCode);
           closeSuggestions();
           onSubmit(selected.canonicalCode, selected.nameZh, 'autocomplete');
+          void onAutocompletePick?.();
         } else {
           onSubmit(value);
         }
@@ -321,6 +325,7 @@ function WorkbenchStockAutocompleteInner({
                 onChange(s.displayCode);
                 closeSuggestions();
                 onSubmit(s.canonicalCode, s.nameZh, 'autocomplete');
+                void onAutocompletePick?.();
               }}
               onMouseEnter={(idx) => setHighlightedIndex(idx)}
               style={{
