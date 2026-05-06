@@ -93,6 +93,31 @@ export async function changePortalPassword(
 }
 
 /** 从自动补全选中一支股票时调用；失败静默（未登录或网络错误）。 */
+export type PortalPlanUpgradeResponse = {
+  orderId: number;
+  message: string;
+};
+
+/** 提交套餐升级意向（无在线支付，后端落库后由客服跟进）。 */
+export async function submitPortalPlanUpgrade(body: {
+  targetTier: string;
+  note?: string;
+}): Promise<PortalPlanUpgradeResponse> {
+  const payload: Record<string, unknown> = { targetTier: body.targetTier };
+  if (body.note != null && String(body.note).trim() !== '') {
+    payload.note = String(body.note).trim();
+  }
+  const res = await apiFetch('/api/v1/auth/portal/account/plan-upgrade', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorMessage(res));
+  }
+  return res.json() as Promise<PortalPlanUpgradeResponse>;
+}
+
 export async function recordPortalStockSearch(): Promise<StockSearchUsageResponse | null> {
   const res = await apiFetch('/api/v1/auth/portal/account/usage/stock-search', {
     method: 'POST',

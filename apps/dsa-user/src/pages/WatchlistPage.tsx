@@ -247,11 +247,21 @@ export function WatchlistPage() {
                       <td className="watchlist-tags-cell">
                         {tags.length ? (
                           <span className="watchlist-concept-tags">
-                            {tags.map((t) => (
-                              <span key={t} className="watchlist-concept-chip">
-                                {t}
-                              </span>
-                            ))}
+                            {tags.map((t) => {
+                              const label = String(t).trim();
+                              if (!label) return null;
+                              const qs = new URLSearchParams({ boardName: label }).toString();
+                              return (
+                                <Link
+                                  key={label}
+                                  to={`/discover/sectors?${qs}`}
+                                  className="watchlist-concept-chip watchlist-concept-chip-link"
+                                  title={`在板块探索中打开「${label}」`}
+                                >
+                                  {label}
+                                </Link>
+                              );
+                            })}
                           </span>
                         ) : (
                           '—'

@@ -324,11 +324,19 @@ export function TodayPage() {
     void run();
   }, [tradingSessions, topK, market, recordScope, adviceFilter]);
 
+  /** 后端按日期降序返回；无快照时清空；有快照时默认选中最近一次，若当前选中仍在新列表中则保留 */
   useEffect(() => {
-    if (snapshotDate && !snapshotDates.includes(snapshotDate)) {
+    if (snapshotDates.length === 0) {
       queueMicrotask(() => setSnapshotDate(''));
+      return;
     }
-  }, [snapshotDate, snapshotDates]);
+    queueMicrotask(() => {
+      setSnapshotDate((prev) => {
+        if (prev && snapshotDates.includes(prev)) return prev;
+        return snapshotDates[0];
+      });
+    });
+  }, [snapshotDates]);
 
   const handleRefresh = useCallback(() => {
     void load({ refresh: true });
@@ -342,11 +350,18 @@ export function TodayPage() {
       <header className="today-header card">
         <div className="today-header-row">
           <div>
-            <span className="today-kicker">近窗聚合</span>
+            <span className="today-kicker">近窗分析聚合</span>
             <h1 className="today-title">今日</h1>
             <p className="today-intro lead">
-              对应工作台「信号摘要」：在所选交易日窗口内对分析记录打分与<strong>行业 / 概念</strong>共现；默认偏重
-              <strong> 买入 / 持有</strong>类标的；可切换市场、数据来源及是否生成 AI 解读。
+              与后台「信号摘要」同源：在选定<strong>交易日窗口</strong>内，对分析记录做<strong>规则打分</strong>，并统计
+              <strong>行业 / 概念</strong>
+              维度的共现；默认数据源为<strong>榜单扫描批次</strong>，操作建议侧重<strong>买入 / 持有</strong>
+              类标的。本页依次呈现<strong>个股排名表</strong>
+              （得分、出现次数、情绪评分、建议与概念标签等）、<strong>概念板块共现</strong>
+              （窗内全量与 Top 标的两视角）、<strong>行业归属板块共现</strong>
+              （同上），以及可选的<strong>AI 叙事</strong>
+              解读。可切换市场、窗口、数据来源与建议范围；支持查看<strong>已持久化排名的历史日期</strong>
+              （默认选用<strong>最近一次</strong>快照，亦可切回「实时」按当前窗口重算）。
             </p>
           </div>
           <button type="button" className="today-refresh-btn" disabled={loading} onClick={handleRefresh}>

@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.storage import PortalUser
+from src.storage import PortalPlanUpgradeRequest, PortalUser
 
 
 def normalize_email(email: str) -> str:
@@ -74,3 +74,24 @@ def update_portal_usage_stats(session: Session, user_id: int, stats_json: str) -
 def update_portal_password_hash(session: Session, user_id: int, password_hash_line: str) -> None:
     session.execute(update(PortalUser).where(PortalUser.id == user_id).values(password_hash=password_hash_line))
     session.commit()
+
+
+def insert_portal_plan_upgrade_request(
+    session: Session,
+    *,
+    portal_user_id: int,
+    from_tier: str,
+    target_tier: str,
+    note: Optional[str],
+) -> int:
+    row = PortalPlanUpgradeRequest(
+        portal_user_id=portal_user_id,
+        from_tier=from_tier,
+        target_tier=target_tier,
+        status="pending",
+        note=note,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return int(row.id)

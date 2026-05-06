@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
+import type { To } from 'react-router-dom';
 
 import { APP_DISPLAY_NAME, APP_TAGLINE } from '../constants/product';
 
 export type BannerNavItem = {
-  to: string;
+  to: To;
   label: string;
   end?: boolean;
 };
@@ -31,7 +32,7 @@ export function SiteBanner({ homeTo, nav, trailing }: SiteBannerProps) {
         <nav className="nav" aria-label="导航">
           {nav.map((item) => (
             <NavLink
-              key={item.to}
+              key={item.label}
               to={item.to}
               end={item.end}
               className={({ isActive }) => (isActive ? 'navlink navlink-active' : 'navlink')}

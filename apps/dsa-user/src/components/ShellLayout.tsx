@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { MAIN_NAV } from '../routes/nav';
 import { useWatchlistStore } from '../stores/watchlistStore';
+import { FeedbackFab } from './FeedbackFab';
 import { SiteBanner } from './SiteBanner';
 import { ShellUserMenu } from './ShellUserMenu';
 
@@ -34,6 +35,7 @@ export function ShellLayout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <SiteBanner homeTo="/today" nav={appNav} trailing={<ShellUserMenu />} />
       <main className="main">{children}</main>
+      <FeedbackFab />
       <footer className="foot">本页为使用者站点；能力与数据以部署环境与账号权限为准。</footer>
     </div>
   );

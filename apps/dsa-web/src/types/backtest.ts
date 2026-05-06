@@ -7,6 +7,8 @@
 
 export interface BacktestRunRequest {
   code?: string;
+  /** 多标的（如持仓组合），与 code、selectionRule 互斥 */
+  codes?: string[];
   selectionRule?: 'signal_digest_top30_14d';
   force?: boolean;
   evalWindowDays?: number;

@@ -11,7 +11,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import List, Optional, Tuple
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, delete, desc, false, func, select
 
 from src.storage import BacktestResult, BacktestSummary, DatabaseManager, AnalysisHistory
 
@@ -99,6 +99,7 @@ class BacktestRepository:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int] = None,
         engine_version: Optional[str] = None,
         analysis_date_from: Optional[date] = None,
@@ -110,6 +111,7 @@ class BacktestRepository:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
                 code=code,
+                codes=codes,
                 eval_window_days=eval_window_days,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
@@ -144,6 +146,7 @@ class BacktestRepository:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int] = None,
         engine_version: Optional[str] = None,
         analysis_date_from: Optional[date] = None,
@@ -154,6 +157,7 @@ class BacktestRepository:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
                 code=code,
+                codes=codes,
                 eval_window_days=eval_window_days,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
@@ -172,6 +176,7 @@ class BacktestRepository:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int] = None,
         engine_version: Optional[str] = None,
         analysis_date_from: Optional[date] = None,
@@ -182,6 +187,7 @@ class BacktestRepository:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
                 code=code,
+                codes=codes,
                 eval_window_days=eval_window_days,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
@@ -300,6 +306,7 @@ class BacktestRepository:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         engine_version: Optional[str] = None,
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
@@ -308,6 +315,7 @@ class BacktestRepository:
         with self.db.get_session() as session:
             conditions = self._build_result_conditions(
                 code=code,
+                codes=codes,
                 eval_window_days=None,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
@@ -327,6 +335,7 @@ class BacktestRepository:
     def _build_result_conditions(
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int],
         engine_version: Optional[str],
         analysis_date_from: Optional[date],
@@ -336,6 +345,12 @@ class BacktestRepository:
         conditions = []
         if code:
             conditions.append(BacktestResult.code == code)
+        elif codes is not None:
+            uniq = sorted({str(c).strip() for c in codes if str(c).strip()})
+            if uniq:
+                conditions.append(BacktestResult.code.in_(uniq))
+            else:
+                conditions.append(false())
         if eval_window_days is not None:
             conditions.append(BacktestResult.eval_window_days == eval_window_days)
         if engine_version:

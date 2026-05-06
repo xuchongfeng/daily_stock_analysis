@@ -12,6 +12,12 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from data_provider.base import canonical_stock_code
 from src.config import get_config
+from src.core.trading_calendar import (
+    get_effective_trading_date,
+    get_last_trading_date_on_or_before,
+    get_market_now,
+    is_market_open,
+)
 from src.repositories.portfolio_repo import (
     DuplicateTradeDedupHashError,
     DuplicateTradeUidError,
@@ -957,6 +963,16 @@ class PortfolioService:
         else:
             keys = list(avg_state.keys())
 
+        cfg = get_config()
+        quote_manager = None
+        if cfg.enable_realtime_quote:
+            try:
+                from data_provider.base import DataFetcherManager
+
+                quote_manager = DataFetcherManager()
+            except Exception as exc:
+                logger.warning("Portfolio snapshot: realtime quote manager unavailable: %s", exc)
+
         for key in sorted(keys):
             symbol, market, currency = key
 
@@ -987,9 +1003,13 @@ class PortfolioService:
                     }
                 )
 
-            last_price = self.repo.get_latest_close(symbol=symbol, as_of=as_of_date)
-            if last_price is None or last_price <= 0:
-                last_price = avg_cost
+            last_price = self._resolve_position_last_price(
+                symbol=symbol,
+                market=market,
+                as_of_date=as_of_date,
+                avg_cost=float(avg_cost),
+                quote_manager=quote_manager,
+            )
 
             local_market_value = qty * float(last_price)
             market_base, stale_market, _ = self._convert_amount(
@@ -1026,6 +1046,45 @@ class PortfolioService:
             total_cost_base += cost_base
 
         return position_rows, lot_rows, market_value_base, total_cost_base, fx_stale
+
+    def _resolve_position_last_price(
+        self,
+        *,
+        symbol: str,
+        market: str,
+        as_of_date: date,
+        avg_cost: float,
+        quote_manager: Optional[Any],
+    ) -> float:
+        """
+        现价：先按该市场「最近交易日」对齐日线窗口，取 ``stock_daily`` 中不超过参照日的最新收盘价；
+        当日快照（as_of≥今天）参照日为 ``get_effective_trading_date``，历史快照为 ``as_of`` 当侧上一交易日。
+        ``ENABLE_REALTIME_QUOTE`` 开启时，仅在「估值日未早于今天」且该市场**当日为交易日**时用盘中价覆盖，
+        避免休市日实时接口异常数据盖掉正确日线。收盘价缺失或非正时回退持仓均价。
+        """
+        today = date.today()
+        mkt = (market or "").strip().lower()
+        if mkt not in VALID_MARKETS:
+            mkt = "cn"
+
+        if as_of_date < today:
+            price_ref_date = get_last_trading_date_on_or_before(mkt, as_of_date)
+        else:
+            price_ref_date = get_effective_trading_date(mkt)
+
+        last_price = self.repo.get_latest_close(symbol=symbol, as_of=price_ref_date, market=market)
+        if quote_manager is not None and as_of_date >= today:
+            try:
+                m_day = get_market_now(mkt).date()
+                if is_market_open(mkt, m_day):
+                    q = quote_manager.get_realtime_quote(symbol, log_final_failure=False)
+                    if q is not None and q.has_basic_data():
+                        last_price = float(q.price)
+            except Exception as exc:
+                logger.debug("Portfolio snapshot realtime quote failed for %s: %s", symbol, exc)
+        if last_price is None or last_price <= 0:
+            last_price = avg_cost
+        return float(last_price)
 
     @staticmethod
     def _consume_fifo_lots(

@@ -17,6 +17,9 @@ from api.v1.endpoints import (
     portal_auth,
     portal_account,
     history,
+    public_demo,
+    feedback_public,
+    feedback_admin,
     stocks,
     backtest,
     system_config,
@@ -26,6 +29,7 @@ from api.v1.endpoints import (
     market_scan,
     signal_digest,
     concept_board,
+    discover_hot_event,
     watchlist,
 )
 
@@ -58,6 +62,24 @@ router.include_router(
     history.router,
     prefix="/history",
     tags=["History"]
+)
+
+router.include_router(
+    public_demo.router,
+    prefix="/public",
+    tags=["PublicDemo"],
+)
+
+router.include_router(
+    feedback_public.router,
+    prefix="/public",
+    tags=["UserFeedback"],
+)
+
+router.include_router(
+    feedback_admin.router,
+    prefix="/system",
+    tags=["UserFeedback"],
 )
 
 router.include_router(
@@ -111,6 +133,12 @@ router.include_router(
     concept_board.router,
     prefix="/concept-boards",
     tags=["ConceptBoards"],
+)
+
+router.include_router(
+    discover_hot_event.router,
+    prefix="/discover/hot-events",
+    tags=["DiscoverHotEvents"],
 )
 
 router.include_router(

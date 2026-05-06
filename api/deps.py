@@ -87,6 +87,26 @@ def require_portal_user_id(request: Request) -> int:
     return uid
 
 
+def require_admin_session(request: Request) -> None:
+    """
+    管理后台专用：开启 ADMIN_AUTH_ENABLED 时需有效管理员 Cookie；
+    关闭门禁时放行（便于本地开发浏览列表）。
+    """
+    from src.auth import COOKIE_NAME, is_auth_enabled, verify_session
+
+    if not is_auth_enabled():
+        return
+    ac = request.cookies.get(COOKIE_NAME)
+    if not ac or not verify_session(ac):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "admin_required",
+                "message": "需要管理员登录后查看",
+            },
+        )
+
+
 def get_system_config_service(request: Request) -> SystemConfigService:
     """Get app-lifecycle shared SystemConfigService instance."""
     service = getattr(request.app.state, "system_config_service", None)

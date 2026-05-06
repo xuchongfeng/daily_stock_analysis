@@ -220,6 +220,12 @@ class AnalysisReport(BaseModel):
         }
 
 
+class PublicDemoAnalysisSamplesResponse(BaseModel):
+    """营销页「分析示例」公开接口：多条完整分析报告（无需登录）"""
+
+    items: List[AnalysisReport] = Field(default_factory=list, description="示例报告列表")
+
+
 class MarkdownReportResponse(BaseModel):
     """Markdown 格式报告响应"""
 

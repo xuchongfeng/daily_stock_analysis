@@ -5,6 +5,9 @@
 
 export type PricingTierId = 'free' | 'p19' | 'p49' | 'p99';
 
+/** 档位高低顺序（与后端 ``portal_plans.TIER_RANK`` 一致，用于升级可选列表）。 */
+export const PRICING_TIER_ORDER: PricingTierId[] = ['free', 'p19', 'p49', 'p99'];
+
 export type PricingTierColumn = {
   id: PricingTierId;
   label: string;

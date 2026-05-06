@@ -17,9 +17,10 @@ from sqlalchemy.orm import Session
 
 from api.deps import get_db, require_portal_user_id
 from src.portal_auth import hash_plain_password, verify_portal_password
-from src.portal_plans import limits_for_tier, normalize_plan_tier
+from src.portal_plans import limits_for_tier, normalize_plan_tier, validate_plan_upgrade_target
 from src.repositories.portal_users_repo import (
     get_portal_user_by_id,
+    insert_portal_plan_upgrade_request,
     update_portal_notification_prefs,
     update_portal_password_hash,
     update_portal_usage_stats,
@@ -181,6 +182,15 @@ class PortalPasswordChangeRequest(BaseModel):
     new_password_confirm: str = Field(..., alias="newPasswordConfirm")
 
 
+class PortalPlanUpgradeRequestBody(BaseModel):
+    """提交套餐升级意向（无支付链路，仅记录订单待客服跟进）。"""
+
+    model_config = {"populate_by_name": True}
+
+    target_tier: str = Field(..., alias="targetTier", description="目标档位，如 p19 / p49 / p99")
+    note: Optional[str] = Field(None, description="用户备注，选填")
+
+
 @router.get("/account", summary="门户账户聚合信息")
 async def get_portal_account(
     request: Request,
@@ -270,6 +280,35 @@ async def portal_change_password(
         )
     update_portal_password_hash(db, uid, line)
     return Response(status_code=204)
+
+
+@router.post("/account/plan-upgrade", summary="提交套餐升级意向订单（无在线支付，客服跟进）")
+async def portal_submit_plan_upgrade(
+    body: PortalPlanUpgradeRequestBody,
+    db: Session = Depends(get_db),
+    uid: int = Depends(require_portal_user_id),
+):
+    row = _portal_row(db, uid)
+    if not row:
+        return JSONResponse(status_code=404, content={"error": "not_found", "message": "用户不存在"})
+    ok, err_msg = validate_plan_upgrade_target(getattr(row, "plan_tier", None), body.target_tier)
+    if not ok:
+        return JSONResponse(status_code=400, content={"error": "invalid_upgrade", "message": err_msg})
+    from_tier = normalize_plan_tier(getattr(row, "plan_tier", None))
+    target_tier = normalize_plan_tier(body.target_tier)
+    note_raw = (body.note or "").strip()
+    note = note_raw[:2048] if note_raw else None
+    order_id = insert_portal_plan_upgrade_request(
+        db,
+        portal_user_id=uid,
+        from_tier=from_tier,
+        target_tier=target_tier,
+        note=note,
+    )
+    return {
+        "orderId": order_id,
+        "message": "订单已提交。暂未开通在线支付，将由客服人员与您联系确认开通事宜。",
+    }
 
 
 @router.post("/account/usage/stock-search", summary="记录一次个股搜索/选中（当月计数）")

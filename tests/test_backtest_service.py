@@ -500,6 +500,33 @@ class BacktestServiceTestCase(unittest.TestCase):
             self.assertEqual(overall.completed_count, 2)
             self.assertEqual(overall.win_count, 2)
 
+    def test_portfolio_codes_summary_and_empty_codes_query(self) -> None:
+        service = BacktestService(self.db)
+        service.run_backtest(code="600519", force=True, eval_window_days=3, min_age_days=0, limit=10)
+
+        summary = service.get_summary(scope="overall", code=None, codes=["600519"], eval_window_days=3)
+        self.assertIsNotNone(summary)
+        assert summary is not None
+        self.assertGreaterEqual(summary["total_evaluations"], 1)
+
+        empty_summary = service.get_summary(scope="overall", code=None, codes=["999999"], eval_window_days=3)
+        self.assertIsNotNone(empty_summary)
+        assert empty_summary is not None
+        self.assertEqual(empty_summary["total_evaluations"], 0)
+
+        _rows, total = service.repo.get_results_paginated(
+            code=None,
+            codes=[],
+            eval_window_days=3,
+            engine_version="v1",
+            analysis_date_from=None,
+            analysis_date_to=None,
+            days=None,
+            offset=0,
+            limit=10,
+        )
+        self.assertEqual(total, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

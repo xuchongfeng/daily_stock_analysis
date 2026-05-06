@@ -17,6 +17,7 @@ export const backtestApi = {
   run: async (params: BacktestRunRequest = {}): Promise<BacktestRunResponse> => {
     const requestData: Record<string, unknown> = {};
     if (params.code) requestData.code = params.code;
+    if (params.codes?.length) requestData.codes = params.codes;
     if (params.selectionRule) requestData.selection_rule = params.selectionRule;
     if (params.force) requestData.force = params.force;
     if (params.evalWindowDays) requestData.eval_window_days = params.evalWindowDays;
@@ -35,16 +36,18 @@ export const backtestApi = {
    */
   getResults: async (params: {
     code?: string;
+    codes?: string[];
     evalWindowDays?: number;
     analysisDateFrom?: string;
     analysisDateTo?: string;
     page?: number;
     limit?: number;
   } = {}): Promise<BacktestResultsResponse> => {
-    const { code, evalWindowDays, analysisDateFrom, analysisDateTo, page = 1, limit = 20 } = params;
+    const { code, codes, evalWindowDays, analysisDateFrom, analysisDateTo, page = 1, limit = 20 } = params;
 
     const queryParams: Record<string, string | number> = { page, limit };
     if (code) queryParams.code = code;
+    if (codes?.length) queryParams.codes = codes.join(',');
     if (evalWindowDays) queryParams.eval_window_days = evalWindowDays;
     if (analysisDateFrom) queryParams.analysis_date_from = analysisDateFrom;
     if (analysisDateTo) queryParams.analysis_date_to = analysisDateTo;
@@ -67,12 +70,14 @@ export const backtestApi = {
    * Get overall performance metrics
    */
   getOverallPerformance: async (params: {
+    codes?: string[];
     evalWindowDays?: number;
     analysisDateFrom?: string;
     analysisDateTo?: string;
   } = {}): Promise<PerformanceMetrics | null> => {
     try {
       const queryParams: Record<string, string | number> = {};
+      if (params.codes?.length) queryParams.codes = params.codes.join(',');
       if (params.evalWindowDays) queryParams.eval_window_days = params.evalWindowDays;
       if (params.analysisDateFrom) queryParams.analysis_date_from = params.analysisDateFrom;
       if (params.analysisDateTo) queryParams.analysis_date_to = params.analysisDateTo;

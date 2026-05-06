@@ -68,6 +68,19 @@
 
 ---
 
+### Q4b: `GET /api/v1/stocks/{code}/quote` 拿不到最新价或报错？
+
+**常见原因**：
+1. **实时链路失败**：东财/新浪/腾讯等不可用、网络超时、HTTP 代理误伤国内源（见配置里 `NO_PROXY` 说明）。
+2. **`ENABLE_REALTIME_QUOTE=false`**：实时行情被关闭，接口不再请求外盘实时源。
+3. **本地无日线**：若实时全部失败，接口会尝试用 **`stock_daily` 最近交易日收盘价** 兜底；若从未同步过该标的日线，仍会 404。
+
+**排查**：看服务端日志中的 `[实时行情]`、`实时行情不可用，使用本地 stock_daily`；响应里若存在 **`price_source`**：`realtime` 为实时，`daily_close` 表示已为日线兜底。
+
+**建议**：对该标的执行一次日线入库（如 `scripts/sync_stock_daily.py --codes ...`），并检查 `.env` 中 `REALTIME_SOURCE_PRIORITY`、`ENABLE_REALTIME_QUOTE` 与代理设置。
+
+---
+
 ## ⚙️ 配置相关
 
 ### Q5: GitHub Actions 运行失败，提示找不到环境变量？

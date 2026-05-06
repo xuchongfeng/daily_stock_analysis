@@ -5,6 +5,7 @@ import HomePage from './pages/HomePage';
 import SignalDigestPage from './pages/SignalDigestPage';
 import BacktestPage from './pages/BacktestPage';
 import SettingsPage from './pages/SettingsPage';
+import UserFeedbackPage from './pages/UserFeedbackPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import ChatPage from './pages/ChatPage';
@@ -77,6 +78,7 @@ const AppContent: React.FC = () => {
         <Route path="/top-movers" element={<MarketScannerPage />} />
         <Route path="/concept-boards" element={<ConceptBoardsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/user-feedback" element={<UserFeedbackPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
       <Route path="/login" element={<LoginPage />} />

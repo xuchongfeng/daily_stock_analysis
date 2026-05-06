@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -24,6 +24,24 @@ from src.storage import DatabaseManager
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_BACKTEST_CODES_QUERY_MAX = 80
+
+
+def _parse_codes_query(raw: Optional[str]) -> Optional[List[str]]:
+    """Comma-separated stock codes for portfolio-scoped queries (max 80)."""
+    if raw is None or not str(raw).strip():
+        return None
+    parts = [p.strip() for p in str(raw).split(",") if p.strip()]
+    if len(parts) > _BACKTEST_CODES_QUERY_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_params",
+                "message": f"codes must contain at most {_BACKTEST_CODES_QUERY_MAX} entries",
+            },
+        )
+    return BacktestService._normalize_codes_list(parts)
 
 
 def _validate_analysis_date_range(
@@ -58,6 +76,7 @@ def run_backtest(
         service = BacktestService(db_manager)
         stats = service.run_backtest(
             code=request.code,
+            codes=request.codes,
             selection_rule=request.selection_rule,
             force=request.force,
             eval_window_days=request.eval_window_days,
@@ -85,6 +104,7 @@ def run_backtest(
 )
 def get_backtest_results(
     code: Optional[str] = Query(None, description="股票代码筛选"),
+    codes: Optional[str] = Query(None, description="多只股票，逗号分隔（与 code 互斥；用于持仓组合）"),
     eval_window_days: Optional[int] = Query(None, ge=1, le=120, description="评估窗口过滤"),
     analysis_date_from: Optional[date] = Query(None, description="分析日期起始（含）"),
     analysis_date_to: Optional[date] = Query(None, description="分析日期结束（含）"),
@@ -93,10 +113,17 @@ def get_backtest_results(
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> BacktestResultsResponse:
     try:
+        codes_list = _parse_codes_query(codes)
+        if code and codes_list:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "invalid_params", "message": "code 与 codes 不能同时使用"},
+            )
         _validate_analysis_date_range(analysis_date_from, analysis_date_to)
         service = BacktestService(db_manager)
         data = service.get_recent_evaluations(
             code=code,
+            codes=codes_list,
             eval_window_days=eval_window_days,
             limit=limit,
             page=page,
@@ -131,17 +158,20 @@ def get_backtest_results(
     summary="获取整体回测表现",
 )
 def get_overall_performance(
+    codes: Optional[str] = Query(None, description="限定股票集合，逗号分隔（聚合为组合维度指标）"),
     eval_window_days: Optional[int] = Query(None, ge=1, le=120, description="评估窗口过滤"),
     analysis_date_from: Optional[date] = Query(None, description="分析日期起始（含）"),
     analysis_date_to: Optional[date] = Query(None, description="分析日期结束（含）"),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> PerformanceMetrics:
     try:
+        codes_list = _parse_codes_query(codes)
         _validate_analysis_date_range(analysis_date_from, analysis_date_to)
         service = BacktestService(db_manager)
         summary = service.get_summary(
             scope="overall",
             code=None,
+            codes=codes_list,
             eval_window_days=eval_window_days,
             analysis_date_from=analysis_date_from,
             analysis_date_to=analysis_date_to,

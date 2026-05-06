@@ -29,7 +29,11 @@ class StockQuote(BaseModel):
     volume: Optional[float] = Field(None, description="成交量（股）")
     amount: Optional[float] = Field(None, description="成交额（元）")
     update_time: Optional[str] = Field(None, description="更新时间")
-    
+    price_source: Optional[str] = Field(
+        None,
+        description="realtime=实时行情；daily_close=本地 stock_daily 最近交易日收盘（实时链路失败时的兜底）",
+    )
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -44,7 +48,8 @@ class StockQuote(BaseModel):
                 "prev_close": 1785.00,
                 "volume": 10000000,
                 "amount": 18000000000,
-                "update_time": "2024-01-01T15:00:00"
+                "update_time": "2024-01-01T15:00:00",
+                "price_source": "realtime",
             }
         }
 

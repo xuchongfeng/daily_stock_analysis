@@ -14,6 +14,7 @@ const TITLES: Record<string, { title: string; description: string }> = {
   '/chat': { title: '问股', description: '多轮策略问答与历史会话管理' },
   '/backtest': { title: '回测', description: '回测任务与结果浏览' },
   '/settings': { title: '设置', description: '系统配置、模型与认证管理' },
+  '/user-feedback': { title: '用户反馈', description: 'C 端站点意见反馈提交记录' },
 };
 
 export const ShellHeader: React.FC<ShellHeaderProps> = ({

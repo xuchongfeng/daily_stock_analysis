@@ -13,6 +13,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
+from sqlalchemy import and_, desc, select
+
 from src.storage import DatabaseManager, AnalysisHistory
 
 logger = logging.getLogger(__name__)
@@ -128,3 +130,57 @@ class AnalysisRepository:
         except Exception as e:
             logger.error(f"统计分析记录失败: {e}")
             return 0
+
+    @staticmethod
+    def _analysis_history_code_candidates(stock_code: str) -> List[str]:
+        """与入库/analysis_history.code 对齐的候选写法（canonical / normalize）。"""
+        from data_provider.base import canonical_stock_code, normalize_stock_code
+
+        s = canonical_stock_code(stock_code or "")
+        if not s:
+            return []
+        out: List[str] = []
+        for c in (s, normalize_stock_code(s)):
+            if c and c not in out:
+                out.append(c)
+        return out
+
+    def get_latest_reusable_analysis(
+        self,
+        stock_code: str,
+        *,
+        within_hours: float = 3.0,
+    ) -> Optional[AnalysisHistory]:
+        """
+        取 ``within_hours`` 内、任意用户产生的该标的最近一条可用分析记录（用于跨用户复用减省 LLM）。
+
+        需具备摘要或 raw_result；按 ``created_at`` 倒序取第一条。
+        """
+        if within_hours <= 0:
+            return None
+        since = datetime.now() - timedelta(hours=float(within_hours))
+        codes = self._analysis_history_code_candidates(stock_code)
+        if not codes:
+            return None
+        try:
+            with self.db.get_session() as session:
+                for code in codes:
+                    row = session.execute(
+                        select(AnalysisHistory)
+                        .where(
+                            and_(
+                                AnalysisHistory.code == code,
+                                AnalysisHistory.created_at >= since,
+                            )
+                        )
+                        .order_by(desc(AnalysisHistory.created_at))
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if row is None:
+                        continue
+                    if not (row.analysis_summary or row.raw_result):
+                        continue
+                    return row
+        except Exception as e:
+            logger.error("get_latest_reusable_analysis failed: %s", e)
+        return None

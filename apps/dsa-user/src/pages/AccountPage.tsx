@@ -1,15 +1,22 @@
 /* eslint-disable react-hooks/set-state-in-effect -- 与 Portfolio 等页一致的 mount / 依赖触发拉取 */
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { logout } from '../api/authApi';
 import {
   changePortalPassword,
   getPortalAccount,
   patchPortalAccount,
+  submitPortalPlanUpgrade,
   type PortalAccountResponse,
   type PortalNotificationPrefs,
 } from '../api/portalAccount';
 import { useAuth } from '../auth/AuthContext';
+import {
+  PRICING_TIER_COLUMNS,
+  PRICING_TIER_ORDER,
+  type PricingTierId,
+} from '../content/pricingPlans';
 
 type TabId = 'profile' | 'notify' | 'subscription';
 
@@ -24,7 +31,7 @@ const TAB_META: Record<TabId, { title: string; description: string }> = {
   },
   subscription: {
     title: '我的套餐',
-    description: '当前档位与自然月用量（统计月与服务器本地时间一致）。',
+    description: '当前档位与自然月用量；更高档位可提交意向订单（暂未开通在线支付，由客服跟进）。',
   },
 };
 
@@ -34,6 +41,12 @@ function tabFromHash(hash: string): TabId {
     return h;
   }
   return 'profile';
+}
+
+function planTierSortIndex(tier: string): number {
+  const t = tier as PricingTierId;
+  const i = PRICING_TIER_ORDER.indexOf(t);
+  return i >= 0 ? i : 0;
 }
 
 function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }) {
@@ -84,6 +97,35 @@ export function AccountPage() {
   const [newPw2, setNewPw2] = useState('');
   const [pwMsg, setPwMsg] = useState<string | null>(null);
   const [pwErr, setPwErr] = useState<string | null>(null);
+
+  const [upgradeTarget, setUpgradeTarget] = useState<PricingTierId | null>(null);
+  const [upgradeNote, setUpgradeNote] = useState('');
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeErr, setUpgradeErr] = useState<string | null>(null);
+  const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
+
+  const upgradeOptions = useMemo(() => {
+    if (!account) {
+      return [];
+    }
+    const cur = planTierSortIndex(account.planTier);
+    return PRICING_TIER_COLUMNS.filter(
+      (col) => col.id !== 'free' && PRICING_TIER_ORDER.indexOf(col.id) > cur,
+    );
+  }, [account]);
+
+  useEffect(() => {
+    if (upgradeOptions.length === 0) {
+      setUpgradeTarget(null);
+      return;
+    }
+    setUpgradeTarget((prev) => {
+      if (prev && upgradeOptions.some((o) => o.id === prev)) {
+        return prev;
+      }
+      return upgradeOptions[0].id;
+    });
+  }, [upgradeOptions]);
 
   const load = useCallback(async () => {
     if (!portalOk) {
@@ -165,13 +207,59 @@ export function AccountPage() {
     }
   };
 
+  const onSubmitUpgrade = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!upgradeTarget) {
+      return;
+    }
+    setUpgradeBusy(true);
+    setUpgradeErr(null);
+    setUpgradeMsg(null);
+    try {
+      const res = await submitPortalPlanUpgrade({
+        targetTier: upgradeTarget,
+        note: upgradeNote.trim() || undefined,
+      });
+      setUpgradeMsg(res.message);
+      setUpgradeNote('');
+    } catch (err) {
+      setUpgradeErr(err instanceof Error ? err.message : '提交失败');
+    } finally {
+      setUpgradeBusy(false);
+    }
+  };
+
+  const onLogout = async () => {
+    if (!status) return;
+    try {
+      await logout({
+        authEnabled: Boolean(status.authEnabled),
+        loggedIn: Boolean(status.loggedIn),
+      });
+    } catch {
+      /* ignore */
+    }
+    await refreshAuth();
+    navigate('/', { replace: true });
+  };
+
   if (!portalOk) {
+    const canLogout = Boolean(
+      (status?.authEnabled && status?.loggedIn) || status?.portalLoggedIn,
+    );
     return (
       <div className="stack">
         <section className="card account-summary-card">
           <h1 className="h1">账户</h1>
           <p className="lead">请先使用邮箱注册或登录门户账号，再管理个人信息、通知偏好与套餐用量。</p>
           <p className="account-hint muted">管理员口令登录不会自动开启门户资料；请在首页完成邮箱注册/登录。</p>
+          {canLogout ? (
+            <p className="account-sidebar-logout-wrap account-sidebar-logout-wrap--stub">
+              <button type="button" className="account-nav-logout" onClick={() => void onLogout()}>
+                退出登录
+              </button>
+            </p>
+          ) : null}
         </section>
       </div>
     );
@@ -225,6 +313,11 @@ export function AccountPage() {
               我的套餐
             </button>
           </nav>
+          <div className="account-sidebar-logout-wrap">
+            <button type="button" className="account-nav-logout" onClick={() => void onLogout()}>
+              退出登录
+            </button>
+          </div>
         </aside>
 
         <div className="account-layout-main">
@@ -417,6 +510,61 @@ export function AccountPage() {
               </div>
             </div>
           </div>
+
+          <hr className="account-divider" />
+
+          <h3 className="h3-account">升级套餐</h3>
+          <p className="account-section-desc account-upgrade-lead">
+            选择目标档位并提交意向订单，无需在线付款；客服将与您联系确认开通事宜。
+          </p>
+          {upgradeOptions.length === 0 ? (
+            <p className="account-section-desc muted">您当前已为可选范围内的最高档位。如需企业方案或其他合作，请通过站点反馈或运营渠道联系。</p>
+          ) : (
+            <form className="account-form account-upgrade-form" onSubmit={(ev) => void onSubmitUpgrade(ev)}>
+              <fieldset className="account-upgrade-tiers" aria-label="目标档位">
+                <legend className="account-field-label">目标档位</legend>
+                <div className="account-upgrade-tier-grid">
+                  {upgradeOptions.map((col) => (
+                    <label
+                      key={col.id}
+                      className={`account-upgrade-tier-card${upgradeTarget === col.id ? ' is-selected' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="upgrade-tier"
+                        className="account-upgrade-tier-input"
+                        checked={upgradeTarget === col.id}
+                        onChange={() => setUpgradeTarget(col.id)}
+                      />
+                      <span className="account-upgrade-tier-label">{col.label}</span>
+                      <span className="account-upgrade-tier-price">{col.priceHeadline}</span>
+                      {col.periodNote ? (
+                        <span className="account-upgrade-tier-note muted">{col.periodNote}</span>
+                      ) : null}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              <label className="account-field">
+                <span className="account-field-label">备注（选填）</span>
+                <textarea
+                  className="account-input account-upgrade-textarea"
+                  rows={3}
+                  value={upgradeNote}
+                  onChange={(ev) => setUpgradeNote(ev.target.value)}
+                  placeholder="如开票信息、希望生效时间等"
+                  maxLength={2048}
+                  autoComplete="off"
+                />
+              </label>
+              {upgradeErr ? <p className="workbench-alert workbench-alert-err">{upgradeErr}</p> : null}
+              {upgradeMsg ? <p className="workbench-alert workbench-alert-ok">{upgradeMsg}</p> : null}
+              <button type="submit" className="account-primary-btn" disabled={upgradeBusy || !upgradeTarget}>
+                {upgradeBusy ? '提交中…' : '提交升级意向'}
+              </button>
+            </form>
+          )}
+
           <button type="button" className="account-secondary-btn" onClick={() => void load()} disabled={loading}>
             {loading ? '刷新中…' : '刷新用量'}
           </button>

@@ -1349,6 +1349,10 @@
           "update_time": {
             "type": "string",
             "format": "date-time"
+          },
+          "price_source": {
+            "type": "string",
+            "description": "realtime | daily_close | placeholder"
           }
         },
         "required": [

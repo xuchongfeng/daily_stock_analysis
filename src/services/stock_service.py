@@ -64,6 +64,76 @@ class StockService:
     def __init__(self):
         """初始化股票数据服务"""
         self.repo = StockRepository()
+
+    def _quote_dict_from_daily_rows(self, resolved_code: str, rows: List[Any]) -> Optional[Dict[str, Any]]:
+        """由 ``stock_daily`` 最近 1～2 根 K 线构造行情字典（用于实时链路失败时的兜底）。"""
+        if not rows:
+            return None
+        latest = rows[0]
+        close_raw = getattr(latest, "close", None)
+        if close_raw is None:
+            return None
+        close = float(close_raw)
+        if close <= 0:
+            return None
+
+        prev_close: Optional[float] = None
+        change: Optional[float] = None
+        change_pct: Optional[float] = None
+        if len(rows) > 1:
+            p = getattr(rows[1], "close", None)
+            if p is not None:
+                prev_close = float(p)
+                if prev_close > 0:
+                    change = close - prev_close
+                    change_pct = (change / prev_close) * 100.0
+        if change_pct is None:
+            pc = getattr(latest, "pct_chg", None)
+            if pc is not None:
+                change_pct = float(pc)
+
+        d = getattr(latest, "date", None)
+        date_str = d.strftime("%Y-%m-%d") if d is not None and hasattr(d, "strftime") else str(d or "")
+
+        def _f(attr: str) -> Optional[float]:
+            v = getattr(latest, attr, None)
+            return float(v) if v is not None else None
+
+        return {
+            "stock_code": resolved_code,
+            "stock_name": None,
+            "current_price": close,
+            "change": change,
+            "change_percent": change_pct,
+            "open": _f("open"),
+            "high": _f("high"),
+            "low": _f("low"),
+            "prev_close": prev_close,
+            "volume": _f("volume"),
+            "amount": _f("amount"),
+            "update_time": date_str,
+            "price_source": "daily_close",
+        }
+
+    def _fallback_realtime_from_daily(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """实时行情全部失败时，用本地日线最近收盘价兜底。"""
+        canon = canonical_stock_code(stock_code)
+        seen: set[str] = set()
+        for cand in (canon, (stock_code or "").strip()):
+            if not cand or cand in seen:
+                continue
+            seen.add(cand)
+            rows = self.repo.get_latest(cand, days=2)
+            out = self._quote_dict_from_daily_rows(cand, rows)
+            if out is not None:
+                logger.info(
+                    "实时行情不可用，使用本地 stock_daily 最近收盘兜底: requested=%s resolved=%s bar_date=%s",
+                    stock_code,
+                    cand,
+                    out.get("update_time"),
+                )
+                return out
+        return None
     
     def get_realtime_quote(self, stock_code: str) -> Optional[Dict[str, Any]]:
         """
@@ -76,14 +146,23 @@ class StockService:
             实时行情数据字典
         """
         try:
-            # 调用数据获取器获取实时行情
-            from data_provider.base import DataFetcherManager
-            
-            manager = DataFetcherManager()
-            quote = manager.get_realtime_quote(stock_code)
-            
+            quote = None
+            try:
+                manager = DataFetcherManager()
+                quote = manager.get_realtime_quote(stock_code)
+            except Exception as exc:
+                logger.warning("实时行情链路异常，将尝试日线收盘兜底: %s — %s", stock_code, exc)
+
+            if quote is not None:
+                px = getattr(quote, "price", None)
+                if px is None or float(px) <= 0:
+                    quote = None
+
             if quote is None:
-                logger.warning(f"获取 {stock_code} 实时行情失败")
+                fb = self._fallback_realtime_from_daily(stock_code)
+                if fb is not None:
+                    return fb
+                logger.warning("获取 %s 实时行情失败且无本地日线兜底", stock_code)
                 return None
             
             # UnifiedRealtimeQuote 是 dataclass，使用 getattr 安全访问字段
@@ -112,14 +191,19 @@ class StockService:
                 "volume": getattr(quote, "volume", None),
                 "amount": getattr(quote, "amount", None),
                 "update_time": datetime.now().isoformat(),
+                "price_source": "realtime",
             }
             
         except ImportError:
-            logger.warning("DataFetcherManager 未找到，使用占位数据")
+            logger.warning("DataFetcherManager 未找到，尝试日线兜底后再占位")
+            fb = self._fallback_realtime_from_daily(stock_code)
+            if fb is not None:
+                return fb
             return self._get_placeholder_quote(stock_code)
         except Exception as e:
             logger.error(f"获取实时行情失败: {e}", exc_info=True)
-            return None
+            fb = self._fallback_realtime_from_daily(stock_code)
+            return fb
     
     def get_history_data(
         self,
@@ -221,4 +305,5 @@ class StockService:
             "volume": None,
             "amount": None,
             "update_time": datetime.now().isoformat(),
+            "price_source": "placeholder",
         }

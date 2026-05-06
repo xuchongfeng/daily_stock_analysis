@@ -57,6 +57,7 @@ class PortfolioPr2TestCase(unittest.TestCase):
                     "PORTFOLIO_RISK_STOP_LOSS_ALERT_PCT=25.0",
                     "PORTFOLIO_RISK_STOP_LOSS_NEAR_RATIO=0.8",
                     "PORTFOLIO_RISK_LOOKBACK_DAYS=365",
+                    "ENABLE_REALTIME_QUOTE=false",
                     f"DATABASE_PATH={self.db_path}",
                 ]
             )

@@ -11,6 +11,7 @@ import {
   Settings2,
   TrendingUp,
   Layers,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -44,6 +45,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'backtest', label: '回测', to: '/backtest', icon: BarChart3 },
   { key: 'market-scanner', label: '榜单扫描', to: '/market-scanner', icon: TrendingUp },
   { key: 'concept-boards', label: '概念板块', to: '/concept-boards', icon: Layers },
+  { key: 'user-feedback', label: '用户反馈', to: '/user-feedback', icon: MessageSquareWarning },
   { key: 'settings', label: '设置', to: '/settings', icon: Settings2 },
 ];
 

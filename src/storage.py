@@ -16,6 +16,7 @@ from contextlib import contextmanager
 import hashlib
 import json
 import logging
+import random
 import re
 import time
 from datetime import datetime, date, timedelta
@@ -329,6 +330,70 @@ class ConceptBoardStock(Base):
     __table_args__ = (
         UniqueConstraint("board_id", "stock_code", name="uix_concept_board_stock"),
         Index("ix_concept_stock_board", "stock_code", "board_id"),
+    )
+
+
+class UserFeedback(Base):
+    """C 端用户提交的反馈（运营在管理后台查看）。"""
+
+    __tablename__ = "user_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message = Column(Text, nullable=False)
+    contact = Column(String(256), nullable=True)
+    portal_user_id = Column(Integer, nullable=True, index=True)
+    page_url = Column(String(512), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+
+class DiscoverHotEvent(Base):
+    """C 端「热点事件」策展主表（运营/脚本写入，只读 API 透出）。"""
+
+    __tablename__ = "discover_hot_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(64), nullable=False, unique=True, index=True)
+    title = Column(String(256), nullable=False)
+    summary = Column(Text)
+    market = Column(String(16), nullable=False, default="cn", index=True)
+    status = Column(String(16), nullable=False, default="active", index=True)
+    heat_score = Column(Integer, nullable=False, default=0)
+    board_codes_json = Column(Text)
+    anchor_stocks_json = Column(Text)
+    core_metrics_json = Column(Text)
+    source_note = Column(Text)
+    started_at = Column(Date, index=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        Index("ix_discover_hot_event_status_updated", "status", "updated_at"),
+    )
+
+
+class DiscoverHotEventTimeline(Base):
+    """热点事件时间线节点。"""
+
+    __tablename__ = "discover_hot_event_timeline"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(
+        Integer,
+        ForeignKey("discover_hot_events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    occurred_on = Column(Date, nullable=False, index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    headline = Column(String(512), nullable=False)
+    body = Column(Text)
+    link_url = Column(String(1024))
+    kind = Column(String(32), nullable=False, default="news")
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        Index("ix_discover_hot_tl_event_date", "event_id", "occurred_on", "sort_order"),
     )
 
 
@@ -763,6 +828,22 @@ class PortalUser(Base):
     usage_stats_json = Column(Text, nullable=True)
 
     __table_args__ = (Index("ix_portal_users_created", "created_at"),)
+
+
+class PortalPlanUpgradeRequest(Base):
+    """门户用户提交的套餐升级意向（无在线支付时由运营/客服跟进）。"""
+
+    __tablename__ = "portal_plan_upgrade_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    portal_user_id = Column(Integer, nullable=False, index=True)
+    from_tier = Column(String(32), nullable=False)
+    target_tier = Column(String(32), nullable=False)
+    status = Column(String(16), nullable=False, default="pending")
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+    __table_args__ = (Index("ix_portal_plan_upgrade_user_created", "portal_user_id", "created_at"),)
 
 
 class DatabaseManager:
@@ -2166,6 +2247,318 @@ class DatabaseManager:
                 "total": int(total),
             }
 
+    @staticmethod
+    def _discover_hot_event_board_codes(raw: Optional[str]) -> List[str]:
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return []
+
+    @staticmethod
+    def _discover_hot_event_json_list(raw: Optional[str]) -> List[Any]:
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, list) else []
+        except (json.JSONDecodeError, TypeError):
+            return []
+
+    @staticmethod
+    def _discover_hot_event_parse_date(value: Any) -> Optional[date]:
+        if value is None or value == "":
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        s = str(value).strip()
+        if not s:
+            return None
+        try:
+            return date.fromisoformat(s[:10])
+        except ValueError:
+            return None
+
+    def _discover_hot_event_summary_dict(self, ev: DiscoverHotEvent) -> Dict[str, Any]:
+        codes = self._discover_hot_event_board_codes(ev.board_codes_json)
+        return {
+            "slug": ev.slug,
+            "title": ev.title,
+            "summary": (ev.summary or "").strip(),
+            "market": ev.market,
+            "status": ev.status,
+            "heat_score": int(ev.heat_score or 0),
+            "board_codes": codes,
+            "started_at": ev.started_at.isoformat() if ev.started_at else None,
+            "updated_at": ev.updated_at.isoformat() if ev.updated_at else None,
+        }
+
+    def list_discover_hot_events(
+        self,
+        *,
+        market: Optional[str] = None,
+        statuses: Optional[List[str]] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        limit = max(1, min(int(limit or 50), 100))
+        with self.get_session() as session:
+            q = select(DiscoverHotEvent)
+            if market and str(market).strip().lower() not in ("", "all"):
+                m = str(market).strip().lower()
+                q = q.where(or_(DiscoverHotEvent.market == m, DiscoverHotEvent.market == "all"))
+            if statuses is not None:
+                q = q.where(DiscoverHotEvent.status.in_(statuses))
+            q = q.order_by(desc(DiscoverHotEvent.updated_at)).limit(limit)
+            rows = session.execute(q).scalars().all()
+            return [self._discover_hot_event_summary_dict(r) for r in rows]
+
+    def _discover_hot_event_board_details(
+        self,
+        session: Session,
+        board_codes: List[str],
+    ) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for code in board_codes:
+            board = session.execute(
+                select(ConceptBoard).where(ConceptBoard.board_code == code)
+            ).scalar_one_or_none()
+            out.append(
+                {
+                    "board_code": code,
+                    "board_name": board.board_name if board else None,
+                    "stocks_count": int(board.stocks_count or 0) if board else None,
+                }
+            )
+        return out
+
+    def get_discover_hot_event_detail(self, slug: str) -> Optional[Dict[str, Any]]:
+        slug_key = str(slug or "").strip().lower()
+        if not slug_key:
+            return None
+        with self.get_session() as session:
+            ev = session.execute(
+                select(DiscoverHotEvent).where(DiscoverHotEvent.slug == slug_key)
+            ).scalar_one_or_none()
+            if ev is None:
+                return None
+            tl_stmt = (
+                select(DiscoverHotEventTimeline)
+                .where(DiscoverHotEventTimeline.event_id == ev.id)
+                .order_by(
+                    desc(DiscoverHotEventTimeline.occurred_on),
+                    desc(DiscoverHotEventTimeline.sort_order),
+                    desc(DiscoverHotEventTimeline.id),
+                )
+            )
+            tl_rows = session.execute(tl_stmt).scalars().all()
+            board_codes = self._discover_hot_event_board_codes(ev.board_codes_json)
+            anchors_raw = self._discover_hot_event_json_list(ev.anchor_stocks_json)
+            anchor_stocks: List[Dict[str, Any]] = []
+            for a in anchors_raw:
+                if not isinstance(a, dict):
+                    continue
+                code = str(a.get("stock_code") or a.get("code") or "").strip()
+                if not code:
+                    continue
+                anchor_stocks.append(
+                    {
+                        "stock_code": code,
+                        "stock_name": a.get("stock_name") or a.get("name"),
+                        "role": a.get("role"),
+                    }
+                )
+            metrics_raw = self._discover_hot_event_json_list(ev.core_metrics_json)
+            core_metrics: List[Dict[str, Any]] = []
+            for m in metrics_raw:
+                if not isinstance(m, dict):
+                    continue
+                label = str(m.get("label") or "").strip()
+                if not label:
+                    continue
+                core_metrics.append(
+                    {
+                        "label": label,
+                        "value": str(m.get("value") if m.get("value") is not None else ""),
+                        "hint": m.get("hint"),
+                    }
+                )
+            timeline: List[Dict[str, Any]] = []
+            for row in tl_rows:
+                timeline.append(
+                    {
+                        "occurred_on": row.occurred_on.isoformat() if row.occurred_on else None,
+                        "sort_order": int(row.sort_order or 0),
+                        "headline": row.headline,
+                        "body": row.body or "",
+                        "link_url": row.link_url or None,
+                        "kind": row.kind or "news",
+                    }
+                )
+            base = self._discover_hot_event_summary_dict(ev)
+            base.update(
+                {
+                    "boards": self._discover_hot_event_board_details(session, board_codes),
+                    "anchor_stocks": anchor_stocks,
+                    "core_metrics": core_metrics,
+                    "timeline": timeline,
+                    "source_note": (ev.source_note or "").strip() or None,
+                }
+            )
+            return base
+
+    def sync_discover_hot_events_from_seed(self, events: List[Dict[str, Any]]) -> int:
+        """
+        用种子列表全量替换热点事件及时间线（策展脚本专用）。
+        """
+
+        def _write(session: Session) -> int:
+            session.execute(delete(DiscoverHotEventTimeline))
+            session.execute(delete(DiscoverHotEvent))
+            count = 0
+            for raw in events:
+                if not isinstance(raw, dict):
+                    continue
+                slug = str(raw.get("slug") or "").strip().lower()
+                if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+                    logger.warning("跳过非法 slug 的热点事件种子: %r", raw.get("slug"))
+                    continue
+                title = str(raw.get("title") or "").strip()
+                if not title:
+                    logger.warning("跳过无标题的热点事件: slug=%s", slug)
+                    continue
+                summary = str(raw.get("summary") or "").strip() or None
+                market = str(raw.get("market") or "cn").strip().lower()[:16] or "cn"
+                status = str(raw.get("status") or "active").strip().lower()[:16] or "active"
+                heat_score = int(raw.get("heat_score") or 0)
+                board_codes = raw.get("board_codes")
+                if not isinstance(board_codes, list):
+                    board_codes = []
+                board_codes = [str(x).strip() for x in board_codes if str(x).strip()]
+                anchor = raw.get("anchor_stocks")
+                if not isinstance(anchor, list):
+                    anchor = []
+                metrics = raw.get("core_metrics")
+                if not isinstance(metrics, list):
+                    metrics = []
+                source_note = raw.get("source_note")
+                source_note = str(source_note).strip() if source_note else None
+                started_at = self._discover_hot_event_parse_date(raw.get("started_at"))
+                ev = DiscoverHotEvent(
+                    slug=slug,
+                    title=title[:256],
+                    summary=summary,
+                    market=market,
+                    status=status,
+                    heat_score=heat_score,
+                    board_codes_json=json.dumps(board_codes, ensure_ascii=False),
+                    anchor_stocks_json=json.dumps(anchor, ensure_ascii=False),
+                    core_metrics_json=json.dumps(metrics, ensure_ascii=False),
+                    source_note=source_note,
+                    started_at=started_at,
+                )
+                session.add(ev)
+                session.flush()
+                tl = raw.get("timeline")
+                if isinstance(tl, list):
+                    for i, node in enumerate(tl):
+                        if not isinstance(node, dict):
+                            continue
+                        headline = str(node.get("headline") or "").strip()
+                        if not headline:
+                            continue
+                        od = self._discover_hot_event_parse_date(node.get("occurred_on"))
+                        if od is None:
+                            od = started_at or date.today()
+                        sort_order = node.get("sort_order")
+                        try:
+                            so = int(sort_order) if sort_order is not None else i
+                        except (TypeError, ValueError):
+                            so = i
+                        body = str(node.get("body") or "").strip() or None
+                        link_url = node.get("link_url")
+                        link_url = str(link_url).strip()[:1024] if link_url else None
+                        kind = str(node.get("kind") or "news").strip().lower()[:32] or "news"
+                        session.add(
+                            DiscoverHotEventTimeline(
+                                event_id=ev.id,
+                                occurred_on=od,
+                                sort_order=so,
+                                headline=headline[:512],
+                                body=body,
+                                link_url=link_url,
+                                kind=kind,
+                            )
+                        )
+                count += 1
+            return count
+
+        return self._run_write_transaction("sync_discover_hot_events_from_seed", _write)
+
+    def insert_user_feedback(
+        self,
+        message: str,
+        *,
+        contact: Optional[str] = None,
+        portal_user_id: Optional[int] = None,
+        page_url: Optional[str] = None,
+        user_agent: Optional[str] = None,
+    ) -> int:
+        """写入一条用户反馈，返回新记录主键 id。"""
+        msg = (message or "").strip()
+        if not msg:
+            raise ValueError("message is required")
+        ct = (contact or "").strip() or None
+        if ct and len(ct) > 256:
+            ct = ct[:256]
+        pu = portal_user_id if isinstance(portal_user_id, int) and portal_user_id > 0 else None
+        pu_str = (page_url or "").strip() or None
+        if pu_str and len(pu_str) > 512:
+            pu_str = pu_str[:512]
+        ua = (user_agent or "").strip() or None
+        if ua and len(ua) > 512:
+            ua = ua[:512]
+
+        def _write(session: Session) -> int:
+            row = UserFeedback(
+                message=msg[:8000],
+                contact=ct,
+                portal_user_id=pu,
+                page_url=pu_str,
+                user_agent=ua,
+            )
+            session.add(row)
+            session.flush()
+            rid = int(row.id or 0)
+            return rid
+
+        return self._run_write_transaction("insert_user_feedback", _write)
+
+    def list_user_feedback_paginated(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Tuple[List[UserFeedback], int]:
+        """分页列出用户反馈（时间倒序）。"""
+        offset = max(0, int(offset))
+        limit = max(1, min(int(limit or 50), 200))
+
+        with self.get_session() as session:
+            total = session.execute(select(func.count(UserFeedback.id))).scalar() or 0
+            rows = session.execute(
+                select(UserFeedback)
+                .order_by(desc(UserFeedback.created_at))
+                .offset(offset)
+                .limit(limit)
+            ).scalars().all()
+            return list(rows), int(total)
+
     def get_concept_board_highlights_by_codes(
         self,
         stock_codes: List[str],
@@ -2336,6 +2729,51 @@ class DatabaseManager:
             results = session.execute(data_query).scalars().all()
             
             return list(results), total
+
+    def list_public_demo_analysis_record_ids(
+        self,
+        limit: int = 3,
+        pool_size: int = 48,
+    ) -> List[int]:
+        """
+        供营销「分析示例」页使用：在「每只股票取最近一条分析」的集合中，
+        先按分析时间取最近 pool_size 只股票，再无放回随机抽取 limit 条主键 id。
+
+        不返回用户维度的过滤；仅用于公开展示已落库的分析报告（与具体门户用户无绑定展示语义）。
+        """
+        limit = max(1, min(int(limit or 3), 20))
+        pool_size = max(limit, min(int(pool_size or 48), 500))
+
+        rn_subq = (
+            select(
+                AnalysisHistory.id.label("ah_id"),
+                func.row_number()
+                .over(
+                    partition_by=AnalysisHistory.code,
+                    order_by=desc(AnalysisHistory.created_at),
+                )
+                .label("rn"),
+            )
+        ).subquery()
+
+        with self.get_session() as session:
+            stmt = (
+                select(AnalysisHistory.id)
+                .join(rn_subq, AnalysisHistory.id == rn_subq.c.ah_id)
+                .where(
+                    rn_subq.c.rn == 1,
+                    AnalysisHistory.code.isnot(None),
+                    AnalysisHistory.code != "",
+                )
+                .order_by(desc(AnalysisHistory.created_at))
+                .limit(pool_size)
+            )
+            rows = session.execute(stmt).scalars().all()
+
+        ids = [int(i) for i in rows if i is not None]
+        if len(ids) <= limit:
+            return ids
+        return random.sample(ids, limit)
 
     def get_latest_analysis_per_codes(self, code_variants: List[str]) -> List[AnalysisHistory]:
         """

@@ -30,6 +30,47 @@ from src.storage import (
 logger = logging.getLogger(__name__)
 
 
+def _portfolio_stock_daily_code_candidates(symbol: str, market: Optional[str] = None) -> List[str]:
+    """
+    与 ``stock_daily`` 常见入库写法对齐的候选代码。
+
+    港股：流水线常以 ``HK00700`` 入库，持仓侧可能仅保存 ``00700``；需在查询侧扩展 HK 前缀候选。
+    """
+    from data_provider import is_hk_stock_code
+    from data_provider.base import canonical_stock_code, normalize_stock_code
+
+    raw = (symbol or "").strip()
+    if not raw:
+        return []
+
+    s = canonical_stock_code(raw)
+    n = normalize_stock_code(s)
+    out: List[str] = []
+    for c in (raw.upper(), s, n):
+        if c and c not in out:
+            out.append(c)
+
+    mkt = (market or "").strip().lower()
+    inferred_hk = bool(
+        mkt == "hk"
+        or is_hk_stock_code(s)
+        or is_hk_stock_code(n)
+        or is_hk_stock_code(raw)
+    )
+    if inferred_hk:
+        for base in (s, n, raw.upper()):
+            bu = base.upper()
+            if bu.startswith("HK") and bu[2:].isdigit():
+                padded = f"HK{bu[2:].zfill(5)}"
+                if padded not in out:
+                    out.append(padded)
+            elif base.isdigit() and 1 <= len(base) <= 5:
+                padded = f"HK{base.zfill(5)}"
+                if padded not in out:
+                    out.append(padded)
+    return out
+
+
 class DuplicateTradeUidError(Exception):
     """Raised when trade_uid conflicts with existing record in one account."""
 
@@ -686,22 +727,34 @@ class PortfolioRepository:
     # ------------------------------------------------------------------
     # Price / FX
     # ------------------------------------------------------------------
-    def get_latest_close(self, symbol: str, as_of: date) -> Optional[float]:
+    def get_latest_close(self, symbol: str, as_of: date, market: Optional[str] = None) -> Optional[float]:
+        """取 ``stock_daily`` 中 ``date <= as_of`` 的最新收盘价；尝试多种代码写法与入库一致。"""
+        candidates = _portfolio_stock_daily_code_candidates(symbol, market)
+        if not candidates:
+            return None
+
         with self.db.get_session() as session:
-            row = session.execute(
-                select(StockDaily)
-                .where(
-                    and_(
-                        StockDaily.code == symbol,
-                        StockDaily.date <= as_of,
+            for code in candidates:
+                row = session.execute(
+                    select(StockDaily)
+                    .where(
+                        and_(
+                            StockDaily.code == code,
+                            StockDaily.date <= as_of,
+                        )
                     )
-                )
-                .order_by(desc(StockDaily.date))
-                .limit(1)
-            ).scalar_one_or_none()
-            if row is None or row.close is None:
-                return None
-            return float(row.close)
+                    .order_by(desc(StockDaily.date))
+                    .limit(1)
+                ).scalar_one_or_none()
+                if row is None or row.close is None:
+                    continue
+                try:
+                    px = float(row.close)
+                except (TypeError, ValueError):
+                    continue
+                if px > 0:
+                    return px
+        return None
 
     def save_fx_rate(
         self,

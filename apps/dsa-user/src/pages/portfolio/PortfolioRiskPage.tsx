@@ -1,5 +1,6 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import type { ParsedApiError } from '../../api/error';
@@ -15,6 +16,50 @@ import type { PortfolioAccountItem, PortfolioCostMethod, PortfolioRiskResponse }
 import { formatMoney, formatPct } from './portfolioFormat';
 
 const SEL = 'user-portfolio-input user-portfolio-select';
+
+function riskStatRow(label: string, value: ReactNode, valueClass?: string) {
+  return (
+    <div className="user-portfolio-risk-stat-row">
+      <span className="user-portfolio-risk-stat-label">{label}</span>
+      <span className={`user-portfolio-risk-stat-value${valueClass ? ` ${valueClass}` : ''}`.trim()}>{value}</span>
+    </div>
+  );
+}
+
+/** 回撤百分比（非负，峰值回撤幅度）：越大着色越深 */
+function drawdownPctClass(pct: number | undefined | null): string {
+  if (pct == null || Number.isNaN(pct)) return 'user-portfolio-risk-val-muted';
+  const v = Math.max(0, pct);
+  if (v >= 18) return 'user-portfolio-risk-val-danger';
+  if (v >= 10) return 'user-portfolio-risk-val-warn';
+  if (v >= 4) return 'user-portfolio-risk-val-caution';
+  return 'user-portfolio-risk-val-ok';
+}
+
+/** 计数：有风险时突出 */
+function stopCountClass(n: number): string {
+  if (n >= 3) return 'user-portfolio-risk-val-danger';
+  if (n >= 1) return 'user-portfolio-risk-val-warn';
+  return 'user-portfolio-risk-val-ok';
+}
+
+/** 亏损幅度（非负，与服务端 loss_pct 一致）：越大越醒目 */
+function lossPctClass(lossPct: number | undefined | null, isTriggered: boolean): string {
+  if (lossPct == null || Number.isNaN(lossPct)) return 'user-portfolio-risk-val-muted';
+  if (isTriggered) return 'user-portfolio-risk-val-danger';
+  if (lossPct >= 12) return 'user-portfolio-risk-val-danger';
+  if (lossPct >= 7) return 'user-portfolio-risk-val-warn';
+  if (lossPct > 0) return 'user-portfolio-risk-val-caution';
+  return 'user-portfolio-risk-val-ok';
+}
+
+/** 现价相对均价：跌破越多越偏警戒色 */
+function lastPriceClass(last: number, avg: number): string {
+  if (!(avg > 0) || Number.isNaN(last) || Number.isNaN(avg)) return '';
+  if (last < avg * 0.9) return 'user-portfolio-risk-val-danger';
+  if (last < avg) return 'user-portfolio-risk-val-warn';
+  return 'user-portfolio-risk-val-ok';
+}
 
 export function PortfolioRiskPage() {
   useEffect(() => {
@@ -168,21 +213,53 @@ export function PortfolioRiskPage() {
 
       <section className="user-portfolio-grid user-portfolio-risk-row">
         <PortfolioCard>
-          <h3 className="text-sm font-semibold user-portfolio-strong mb-2">回撤监控</h3>
-          <div className="text-xs user-portfolio-muted space-y-1">
-            <div>采样点数: {risk?.drawdown?.seriesPoints ?? '—'}</div>
-            <div>最大回撤: {formatPct(risk?.drawdown?.maxDrawdownPct)}</div>
-            <div>当前回撤: {formatPct(risk?.drawdown?.currentDrawdownPct)}</div>
-            <div>告警: {risk?.drawdown?.alert ? '是' : '否'}</div>
-            <div>汇率 stale: {risk?.drawdown?.fxStale ? '是' : '否'}</div>
+          <h3 className="text-sm font-semibold user-portfolio-strong mb-3">回撤监控</h3>
+          <div className="user-portfolio-risk-stats">
+            {riskStatRow(
+              '采样点数',
+              risk?.drawdown?.seriesPoints ?? '—',
+              typeof risk?.drawdown?.seriesPoints === 'number' ? 'user-portfolio-risk-val-info' : 'user-portfolio-risk-val-muted',
+            )}
+            {riskStatRow(
+              '最大回撤',
+              formatPct(risk?.drawdown?.maxDrawdownPct),
+              drawdownPctClass(risk?.drawdown?.maxDrawdownPct),
+            )}
+            {riskStatRow(
+              '当前回撤',
+              formatPct(risk?.drawdown?.currentDrawdownPct),
+              drawdownPctClass(risk?.drawdown?.currentDrawdownPct),
+            )}
+            {riskStatRow(
+              '告警',
+              risk?.drawdown?.alert ? '是' : '否',
+              risk?.drawdown?.alert ? 'user-portfolio-risk-val-danger' : 'user-portfolio-risk-val-ok',
+            )}
+            {riskStatRow(
+              '汇率数据过期',
+              risk?.drawdown?.fxStale ? '是' : '否',
+              risk?.drawdown?.fxStale ? 'user-portfolio-risk-val-warn' : 'user-portfolio-risk-val-ok',
+            )}
           </div>
         </PortfolioCard>
         <PortfolioCard>
-          <h3 className="text-sm font-semibold user-portfolio-strong mb-2">止损预警汇总</h3>
-          <div className="text-xs user-portfolio-muted space-y-1">
-            <div>接近告警: {risk?.stopLoss?.nearAlert ? '是' : '否'}</div>
-            <div>已触发标的数: {risk?.stopLoss?.triggeredCount ?? 0}</div>
-            <div>接近阈值标的数: {risk?.stopLoss?.nearCount ?? 0}</div>
+          <h3 className="text-sm font-semibold user-portfolio-strong mb-3">止损预警汇总</h3>
+          <div className="user-portfolio-risk-stats">
+            {riskStatRow(
+              '接近告警',
+              risk?.stopLoss?.nearAlert ? '是' : '否',
+              risk?.stopLoss?.nearAlert ? 'user-portfolio-risk-val-warn' : 'user-portfolio-risk-val-ok',
+            )}
+            {riskStatRow(
+              '已触发标的数',
+              risk?.stopLoss?.triggeredCount ?? 0,
+              stopCountClass(Number(risk?.stopLoss?.triggeredCount ?? 0)),
+            )}
+            {riskStatRow(
+              '接近阈值标的数',
+              risk?.stopLoss?.nearCount ?? 0,
+              stopCountClass(Number(risk?.stopLoss?.nearCount ?? 0)),
+            )}
           </div>
         </PortfolioCard>
       </section>
@@ -207,29 +284,46 @@ export function PortfolioRiskPage() {
         {stopItems.length === 0 ? (
           <PortfolioEmpty title="暂无明细" description="当前无接近或触发止损阈值的持仓。" className="border-none bg-transparent py-6 shadow-none" />
         ) : (
-          <div className="user-portfolio-scroll-x">
-            <table className="w-full text-sm">
+          <div className="user-portfolio-scroll-x user-portfolio-risk-table-wrap">
+            <table className="w-full text-sm user-portfolio-risk-table">
               <thead>
                 <tr>
-                  <th className="text-left py-2 pr-2">代码</th>
-                  <th className="text-right py-2 pr-2">均价</th>
-                  <th className="text-right py-2 pr-2">现价</th>
-                  <th className="text-right py-2 pr-2">亏损%</th>
-                  <th className="text-right py-2 pr-2">接近线%</th>
-                  <th className="text-center py-2">已触发</th>
+                  <th className="text-left py-2.5 px-2">代码</th>
+                  <th className="text-right py-2.5 px-2">均价</th>
+                  <th className="text-right py-2.5 px-2">现价</th>
+                  <th className="text-right py-2.5 px-2">亏损%</th>
+                  <th className="text-right py-2.5 px-2">接近线%</th>
+                  <th className="text-center py-2.5 px-2">已触发</th>
                 </tr>
               </thead>
               <tbody>
-                {stopItems.map((row) => (
-                  <tr key={`${row.accountId}-${row.symbol}`}>
-                    <td className="py-2 pr-2 user-portfolio-mono">{row.symbol}</td>
-                    <td className="py-2 pr-2 text-right">{formatMoney(row.avgCost, cur)}</td>
-                    <td className="py-2 pr-2 text-right">{formatMoney(row.lastPrice, cur)}</td>
-                    <td className="py-2 pr-2 text-right">{formatPct(row.lossPct)}</td>
-                    <td className="py-2 pr-2 text-right">{formatPct(row.nearThresholdPct)}</td>
-                    <td className="py-2 text-center">{row.isTriggered ? '是' : '否'}</td>
-                  </tr>
-                ))}
+                {stopItems.map((row) => {
+                  const triggered = Boolean(row.isTriggered);
+                  const nearStress = !triggered && row.lossPct > 0;
+                  return (
+                    <tr
+                      key={`${row.accountId}-${row.symbol}`}
+                      className={
+                        triggered ? 'user-portfolio-risk-row-triggered' : nearStress ? 'user-portfolio-risk-row-near' : undefined
+                      }
+                    >
+                      <td className="py-2 px-2 user-portfolio-mono user-portfolio-strong">{row.symbol}</td>
+                      <td className="py-2 px-2 text-right user-portfolio-num user-portfolio-strong">{formatMoney(row.avgCost, cur)}</td>
+                      <td
+                        className={`py-2 px-2 text-right user-portfolio-num ${lastPriceClass(row.lastPrice, row.avgCost)}`.trim()}
+                      >
+                        {formatMoney(row.lastPrice, cur)}
+                      </td>
+                      <td className={`py-2 px-2 text-right user-portfolio-num ${lossPctClass(row.lossPct, triggered)}`.trim()}>
+                        {formatPct(row.lossPct)}
+                      </td>
+                      <td className="py-2 px-2 text-right user-portfolio-num user-portfolio-risk-val-info">{formatPct(row.nearThresholdPct)}</td>
+                      <td className={`py-2 px-2 text-center font-semibold ${triggered ? 'user-portfolio-risk-val-danger' : 'user-portfolio-risk-val-ok'}`}>
+                        {triggered ? '是' : '否'}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -16,11 +16,14 @@ import { ShellLayout } from './components/ShellLayout';
 import { AccountPage } from './pages/AccountPage';
 import { ChatHubPage } from './pages/ChatHubPage';
 import { DiscoverPage } from './pages/DiscoverPage';
+import { DiscoverConceptBoardsPage } from './pages/DiscoverConceptBoardsPage';
+import { DiscoverHotEventDetailPage } from './pages/DiscoverHotEventDetailPage';
+import { DiscoverHotEventsPage } from './pages/DiscoverHotEventsPage';
 import { PortfolioAccountDetailPage } from './pages/portfolio/PortfolioAccountDetailPage';
 import { PortfolioHubPage } from './pages/portfolio/PortfolioHubPage';
 import { PortfolioLedgerPage } from './pages/portfolio/PortfolioLedgerPage';
 import { PortfolioRiskPage } from './pages/portfolio/PortfolioRiskPage';
-import { ReviewPage } from './pages/ReviewPage';
+import { BacktestPage } from './pages/BacktestPage';
 import { TodayPage } from './pages/TodayPage';
 import { WatchlistPage } from './pages/WatchlistPage';
 import { FeaturesPage } from './pages/marketing/FeaturesPage';
@@ -29,6 +32,7 @@ import { LoginPage } from './pages/marketing/LoginPage';
 import { PerformancePage } from './pages/marketing/PerformancePage';
 import { PricingPage } from './pages/marketing/PricingPage';
 import { ReviewsPage } from './pages/marketing/ReviewsPage';
+import { StockDemoPage } from './pages/marketing/StockDemoPage';
 
 function Loading() {
   return <div className="loading-screen">加载中…</div>;
@@ -104,6 +108,7 @@ function AppRoutes() {
           <Route path="pricing" element={<PricingPage />} />
           <Route path="reviews" element={<ReviewsPage />} />
           <Route path="performance" element={<PerformancePage />} />
+          <Route path="analysis-demo" element={<StockDemoPage />} />
           <Route path="login" element={<LoginPage />} />
           <Route path="register" element={<Navigate to="/login?tab=register" replace />} />
         </Route>
@@ -118,8 +123,14 @@ function AppRoutes() {
           <Route path="account/:accountId/ledger" element={<PortfolioLedgerPage />} />
           <Route path="account/:accountId/risk" element={<PortfolioRiskPage />} />
         </Route>
-        <Route path="discover" element={<DiscoverPage />} />
-        <Route path="review" element={<ReviewPage />} />
+        <Route path="discover" element={<Outlet />}>
+          <Route index element={<DiscoverPage />} />
+          <Route path="sectors" element={<DiscoverConceptBoardsPage />} />
+          <Route path="events" element={<DiscoverHotEventsPage />} />
+          <Route path="events/:slug" element={<DiscoverHotEventDetailPage />} />
+        </Route>
+        <Route path="backtest" element={<BacktestPage />} />
+        <Route path="review" element={<Navigate to="/backtest" replace />} />
         <Route path="account" element={<AccountPage />} />
       </Route>
       <Route path="*" element={<WildcardFallback />} />

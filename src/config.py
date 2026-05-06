@@ -613,6 +613,9 @@ class Config:
     # 分析间隔时间（秒）- 用于避免API限流
     analysis_delay: float = 0.0  # 个股分析与大盘分析之间的延迟
 
+    # 问股/API：相同标的在未 force_refresh 时复用 analysis_history 最近记录（跨门户用户），节省 LLM；小时数；0=关闭
+    analysis_reuse_ttl_hours: float = 3.0
+
     # Merge stock + market report into one notification (Issue #190)
     merge_email_notification: bool = False
 
@@ -1265,6 +1268,12 @@ class Config:
             report_integrity_retry=parse_env_int(os.getenv('REPORT_INTEGRITY_RETRY'), 1, field_name='REPORT_INTEGRITY_RETRY', minimum=0),
             report_history_compare_n=parse_env_int(os.getenv('REPORT_HISTORY_COMPARE_N'), 0, field_name='REPORT_HISTORY_COMPARE_N', minimum=0),
             analysis_delay=parse_env_float(os.getenv('ANALYSIS_DELAY'), 0.0, field_name='ANALYSIS_DELAY', minimum=0.0),
+            analysis_reuse_ttl_hours=parse_env_float(
+                os.getenv('ANALYSIS_REUSE_TTL_HOURS'),
+                3.0,
+                field_name='ANALYSIS_REUSE_TTL_HOURS',
+                minimum=0.0,
+            ),
             merge_email_notification=os.getenv('MERGE_EMAIL_NOTIFICATION', 'false').lower() == 'true',
             feishu_max_bytes=parse_env_int(os.getenv('FEISHU_MAX_BYTES'), 20000, field_name='FEISHU_MAX_BYTES', minimum=1),
             wechat_max_bytes=wechat_max_bytes,

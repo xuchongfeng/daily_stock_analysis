@@ -116,6 +116,33 @@ def get_market_now(
     return current_time.astimezone(tz)
 
 
+def get_last_trading_date_on_or_before(market: Optional[str], as_of: date) -> date:
+    """
+    给定日历日 ``as_of``，返回该市场在该日或之前的**最近一个交易日**（日历日）。
+
+    用于持仓估值等与日线 bar 对齐：节假日 / 周末则回退到上一交易日。
+    exchange-calendars 不可用时 fail-open 为 ``as_of``。
+    """
+    if not as_of:
+        return as_of
+    if not market:
+        return as_of
+    if not _XCALS_AVAILABLE:
+        return as_of
+    ex = MARKET_EXCHANGE.get(market)
+    if not ex:
+        return as_of
+    try:
+        cal = xcals.get_calendar(ex)
+        if cal.is_session(as_of):
+            return as_of
+        sess = cal.date_to_session(as_of, direction="previous")
+        return sess.date()
+    except Exception as e:
+        logger.warning("trading_calendar.get_last_trading_date_on_or_before fail-open: %s", e)
+        return as_of
+
+
 def get_effective_trading_date(
     market: Optional[str], current_time: Optional[datetime] = None
 ) -> date:

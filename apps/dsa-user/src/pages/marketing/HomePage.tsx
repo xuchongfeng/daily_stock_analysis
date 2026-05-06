@@ -5,7 +5,7 @@ import { APP_DISPLAY_NAME } from '../../constants/product';
 /** 营销首页：概览 + 进入各子页的入口 */
 export function HomePage() {
   return (
-    <div className="page-stack">
+    <div className="page-stack page-stack--marketing-home">
       <section className="hero-block">
         <p className="hero-kicker">{APP_DISPLAY_NAME}</p>
         <h1 className="hero-title">AI 赋能 · 智能平权</h1>
@@ -31,6 +31,11 @@ export function HomePage() {
       <section className="section-card">
         <h2 className="section-title">快速了解</h2>
         <div className="link-card-grid">
+          <Link to="/analysis-demo" className="link-card">
+            <h3>分析示例</h3>
+            <p>无需登录即可浏览至多 3 只个股的分析摘要卡片（榜单样本优先，与工作台报告同源）。</p>
+            <span className="link-card-more">查看</span>
+          </Link>
           <Link to="/features" className="link-card">
             <h3>功能介绍</h3>
             <p>今日总览、自选与持仓、问股问答、发现与复盘等模块，覆盖看盘、研究与回顾全链路。</p>
@@ -38,7 +43,10 @@ export function HomePage() {
           </Link>
           <Link to="/pricing" className="link-card">
             <h3>定价方案</h3>
-            <p>体验（¥0）、专业（¥199/月）、团队（面议）三档能力与对比。</p>
+            <p>
+              四档任选：<strong>免费</strong>限额内长期使用；付费为每自然月 <strong>¥19 / ¥49 / ¥99</strong>
+              （含税以公示为准）。详情页用表格对比 AI 配额、自选上限、每日推送、榜单摘要与异动、留存与支持等。
+            </p>
             <span className="link-card-more">查看</span>
           </Link>
           <Link to="/reviews" className="link-card">

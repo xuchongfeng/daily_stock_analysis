@@ -29,10 +29,27 @@ class BacktestService:
         self.repo = BacktestRepository(self.db)
         self.stock_repo = StockRepository(self.db)
 
+    @staticmethod
+    def _normalize_codes_list(codes: Optional[List[str]]) -> Optional[List[str]]:
+        if not codes:
+            return None
+        seen: set[str] = set()
+        out: List[str] = []
+        for raw in codes:
+            s = str(raw).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            out.append(s)
+            if len(out) >= 80:
+                break
+        return out or None
+
     def run_backtest(
         self,
         *,
         code: Optional[str] = None,
+        codes: Optional[List[str]] = None,
         selection_rule: Optional[str] = None,
         force: bool = False,
         eval_window_days: Optional[int] = None,
@@ -57,7 +74,11 @@ class BacktestService:
 
         selected_codes: Optional[List[str]] = None
         rule = (selection_rule or "").strip().lower()
-        if not code and rule:
+        if code:
+            pass
+        elif codes:
+            selected_codes = self._normalize_codes_list(codes)
+        elif rule:
             selected_codes = self._resolve_selection_rule_codes(rule)
             if not selected_codes:
                 logger.warning("回测选股规则未选出标的: rule=%s", rule)
@@ -255,6 +276,7 @@ class BacktestService:
         self,
         *,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int] = None,
         limit: int = 50,
         page: int = 1,
@@ -263,12 +285,14 @@ class BacktestService:
     ) -> Dict[str, Any]:
         config = get_config()
         engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        codes_norm: Optional[List[str]] = None if code else self._normalize_codes_list(codes)
 
         # When date filters are active and no explicit window is requested,
         # infer the smallest available window to stay aligned with summary metrics.
         if eval_window_days is None and (analysis_date_from is not None or analysis_date_to is not None):
             windows = self.repo.get_distinct_eval_windows(
                 code=code,
+                codes=codes_norm,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
                 analysis_date_to=analysis_date_to,
@@ -279,6 +303,7 @@ class BacktestService:
         offset = max(page - 1, 0) * limit
         rows, total = self.repo.get_results_paginated(
             code=code,
+            codes=codes_norm,
             eval_window_days=eval_window_days,
             engine_version=engine_version,
             analysis_date_from=analysis_date_from,
@@ -295,18 +320,68 @@ class BacktestService:
         *,
         scope: str,
         code: Optional[str],
+        codes: Optional[List[str]] = None,
         eval_window_days: Optional[int] = None,
         analysis_date_from: Optional[date] = None,
         analysis_date_to: Optional[date] = None,
     ) -> Optional[Dict[str, Any]]:
         config = get_config()
         engine_version = str(getattr(config, "backtest_engine_version", "v1"))
+        codes_norm = self._normalize_codes_list(codes)
+
+        if codes_norm:
+            if scope != "overall":
+                raise ValueError("codes 筛选仅支持整体汇总（scope=overall）")
+            ew = int(eval_window_days) if eval_window_days is not None else None
+            if analysis_date_from is not None or analysis_date_to is not None:
+                count = self.repo.count_results(
+                    code=None,
+                    codes=codes_norm,
+                    eval_window_days=ew,
+                    engine_version=engine_version,
+                    analysis_date_from=analysis_date_from,
+                    analysis_date_to=analysis_date_to,
+                )
+                if count > self.MAX_DYNAMIC_SUMMARY_ROWS:
+                    raise ValueError(
+                        "Date-filtered summary matches too many rows; narrow the analysis date range or codes."
+                    )
+                rows = self.repo.list_results(
+                    code=None,
+                    codes=codes_norm,
+                    eval_window_days=ew,
+                    engine_version=engine_version,
+                    analysis_date_from=analysis_date_from,
+                    analysis_date_to=analysis_date_to,
+                )
+            else:
+                rows = self.repo.list_results(
+                    code=None,
+                    codes=codes_norm,
+                    eval_window_days=ew,
+                    engine_version=engine_version,
+                    limit=self.MAX_DYNAMIC_SUMMARY_ROWS + 1,
+                )
+                if len(rows) > self.MAX_DYNAMIC_SUMMARY_ROWS:
+                    raise ValueError(
+                        "Filtered summary matches too many rows; narrow codes or add analysis date filters."
+                    )
+            return self._build_dynamic_summary(
+                rows=rows,
+                scope="overall",
+                code=OVERALL_SENTINEL_CODE,
+                eval_window_days=ew,
+                engine_version=engine_version,
+                max_rows=self.MAX_DYNAMIC_SUMMARY_ROWS,
+            )
+
         lookup_code = OVERALL_SENTINEL_CODE if scope == "overall" else code
 
         if analysis_date_from is not None or analysis_date_to is not None:
             ew = int(eval_window_days) if eval_window_days is not None else None
             count = self.repo.count_results(
                 code=code,
+                codes=None,
                 eval_window_days=ew,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,
@@ -318,6 +393,7 @@ class BacktestService:
                 )
             rows = self.repo.list_results(
                 code=code,
+                codes=None,
                 eval_window_days=ew,
                 engine_version=engine_version,
                 analysis_date_from=analysis_date_from,

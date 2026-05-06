@@ -292,7 +292,8 @@ def get_stock_quote(stock_code: str) -> StockQuote:
             prev_close=result.get("prev_close"),
             volume=result.get("volume"),
             amount=result.get("amount"),
-            update_time=result.get("update_time")
+            update_time=result.get("update_time"),
+            price_source=result.get("price_source"),
         )
         
     except HTTPException:

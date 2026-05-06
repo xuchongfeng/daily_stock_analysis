@@ -168,5 +168,37 @@ class EffectiveTradingDateTestCase(unittest.TestCase):
         self.assertEqual(result, date(2026, 3, 28))
 
 
+class LastTradingDateOnOrBeforeTestCase(unittest.TestCase):
+    def test_session_day_unchanged(self):
+        fake_calendar = _FakeCalendar(
+            sessions=[date(2026, 3, 26), date(2026, 3, 27)],
+            close_hour=15,
+            tz_name="Asia/Shanghai",
+        )
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", True), patch.object(
+            trading_calendar,
+            "xcals",
+            SimpleNamespace(get_calendar=lambda _ex: fake_calendar),
+            create=True,
+        ):
+            result = trading_calendar.get_last_trading_date_on_or_before("cn", date(2026, 3, 27))
+        self.assertEqual(result, date(2026, 3, 27))
+
+    def test_weekend_returns_previous_session(self):
+        fake_calendar = _FakeCalendar(
+            sessions=[date(2026, 3, 26), date(2026, 3, 27)],
+            close_hour=15,
+            tz_name="Asia/Shanghai",
+        )
+        with patch.object(trading_calendar, "_XCALS_AVAILABLE", True), patch.object(
+            trading_calendar,
+            "xcals",
+            SimpleNamespace(get_calendar=lambda _ex: fake_calendar),
+            create=True,
+        ):
+            result = trading_calendar.get_last_trading_date_on_or_before("cn", date(2026, 3, 28))
+        self.assertEqual(result, date(2026, 3, 27))
+
+
 if __name__ == "__main__":
     unittest.main()

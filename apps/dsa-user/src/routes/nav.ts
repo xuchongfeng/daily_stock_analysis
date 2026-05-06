@@ -5,6 +5,5 @@ export const MAIN_NAV = [
   { to: '/chat', label: '问股' },
   { to: '/portfolio', label: '持仓' },
   { to: '/discover', label: '发现' },
-  { to: '/review', label: '复盘' },
-  { to: '/account', label: '账户' },
+  { to: '/backtest', label: '回测' },
 ] as const;

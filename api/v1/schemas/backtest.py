@@ -5,11 +5,15 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class BacktestRunRequest(BaseModel):
     code: Optional[str] = Field(None, description="仅回测指定股票")
+    codes: Optional[List[str]] = Field(
+        None,
+        description="仅回测指定多只股票（如持仓组合），与 code、selection_rule 互斥",
+    )
     selection_rule: Optional[str] = Field(
         None,
         description="选股规则：signal_digest_top30_14d（近14交易日信号摘要Top30）",
@@ -18,6 +22,41 @@ class BacktestRunRequest(BaseModel):
     eval_window_days: Optional[int] = Field(None, ge=1, le=120, description="评估窗口（交易日数）")
     min_age_days: Optional[int] = Field(None, ge=0, le=365, description="分析记录最小天龄（0=不限）")
     limit: int = Field(200, ge=1, le=2000, description="最多处理的分析记录数")
+
+    @field_validator("codes", mode="before")
+    @classmethod
+    def _codes_trim(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return [value]
+        return value
+
+    @field_validator("codes", mode="after")
+    @classmethod
+    def _codes_cap(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        if not value:
+            return None
+        seen: set[str] = set()
+        out: List[str] = []
+        for raw in value:
+            s = str(raw).strip()
+            if not s or s in seen:
+                continue
+            seen.add(s)
+            out.append(s)
+            if len(out) >= 80:
+                break
+        return out or None
+
+    @model_validator(mode="after")
+    def _at_most_one_target(self):
+        has_code = bool(self.code and str(self.code).strip())
+        has_codes = bool(self.codes)
+        has_rule = bool(self.selection_rule and str(self.selection_rule).strip())
+        if sum(1 for x in (has_code, has_codes, has_rule) if x) > 1:
+            raise ValueError("code、codes、selection_rule 至多指定其一")
+        return self
 
 
 class BacktestRunResponse(BaseModel):

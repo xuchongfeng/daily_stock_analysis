@@ -10,7 +10,7 @@
 """
 
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Body
 
@@ -50,6 +50,115 @@ from src.utils.data_processing import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def build_analysis_report_from_detail_dict(
+    result: Dict[str, Any],
+    db_manager: DatabaseManager,
+) -> AnalysisReport:
+    """
+    将 HistoryService.resolve_and_get_detail / _record_to_detail_dict 的结果转为 API 层 AnalysisReport。
+    与 GET /api/v1/history/{id} 响应字段一致，供公开示例接口复用。
+    """
+    current_price = None
+    change_pct = None
+    context_snapshot = result.get("context_snapshot")
+    if context_snapshot and isinstance(context_snapshot, dict):
+        enhanced_context = context_snapshot.get("enhanced_context") or {}
+        realtime = enhanced_context.get("realtime") or {}
+        current_price = realtime.get("price")
+        change_pct = realtime.get("change_pct") or realtime.get("change_60d")
+
+        if current_price is None:
+            realtime_quote_raw = context_snapshot.get("realtime_quote_raw") or {}
+            current_price = realtime_quote_raw.get("price")
+            change_pct = change_pct or realtime_quote_raw.get("change_pct") or realtime_quote_raw.get("pct_chg")
+
+    raw_result = result.get("raw_result")
+    if not isinstance(raw_result, dict):
+        raw_result = {}
+    report_language = normalize_report_language(
+        result.get("report_language")
+        or raw_result.get("report_language")
+        or (
+            context_snapshot.get("report_language")
+            if isinstance(context_snapshot, dict)
+            else None
+        )
+    )
+    stock_name = get_localized_stock_name(
+        result.get("stock_name"),
+        result.get("stock_code", ""),
+        report_language,
+    )
+
+    meta = ReportMeta(
+        id=result.get("id"),
+        query_id=result.get("query_id", ""),
+        stock_code=result.get("stock_code", ""),
+        stock_name=stock_name,
+        report_type=result.get("report_type"),
+        report_language=report_language,
+        created_at=result.get("created_at"),
+        current_price=current_price,
+        change_pct=change_pct,
+        model_used=normalize_model_used(result.get("model_used")),
+    )
+
+    summary = ReportSummary(
+        analysis_summary=result.get("analysis_summary"),
+        operation_advice=localize_operation_advice(
+            result.get("operation_advice"),
+            report_language,
+        ),
+        trend_prediction=localize_trend_prediction(
+            result.get("trend_prediction"),
+            report_language,
+        ),
+        sentiment_score=result.get("sentiment_score"),
+        sentiment_label=(
+            get_sentiment_label(result.get("sentiment_score"), report_language)
+            if result.get("sentiment_score") is not None
+            else result.get("sentiment_label")
+        ),
+    )
+
+    strategy = ReportStrategy(
+        ideal_buy=result.get("ideal_buy"),
+        secondary_buy=result.get("secondary_buy"),
+        stop_loss=result.get("stop_loss"),
+        take_profit=result.get("take_profit"),
+    )
+
+    fallback_fundamental = db_manager.get_latest_fundamental_snapshot(
+        query_id=result.get("query_id", ""),
+        code=result.get("stock_code", ""),
+    )
+    extracted_fundamental = extract_fundamental_detail_fields(
+        context_snapshot=result.get("context_snapshot"),
+        fallback_fundamental_payload=fallback_fundamental,
+    )
+    extracted_boards = extract_board_detail_fields(
+        context_snapshot=result.get("context_snapshot"),
+        fallback_fundamental_payload=fallback_fundamental,
+    )
+
+    details = ReportDetails(
+        news_content=result.get("news_content"),
+        raw_result=result.get("raw_result"),
+        context_snapshot=result.get("context_snapshot"),
+        financial_report=extracted_fundamental.get("financial_report"),
+        dividend_metrics=extracted_fundamental.get("dividend_metrics"),
+        belong_boards=extracted_boards.get("belong_boards"),
+        sector_rankings=extracted_boards.get("sector_rankings"),
+    )
+
+    return AnalysisReport(
+        meta=meta,
+        summary=summary,
+        strategy=strategy,
+        details=details,
+    )
 
 
 @router.get(
@@ -271,7 +380,7 @@ def get_history_detail(
         
         # Try integer ID first, fall back to query_id string lookup
         result = service.resolve_and_get_detail(record_id)
-        
+
         if result is None:
             raise HTTPException(
                 status_code=404,
@@ -280,110 +389,8 @@ def get_history_detail(
                     "message": f"未找到 id/query_id={record_id} 的分析记录"
                 }
             )
-        
-        # 从 context_snapshot 中提取价格信息
-        current_price = None
-        change_pct = None
-        context_snapshot = result.get("context_snapshot")
-        if context_snapshot and isinstance(context_snapshot, dict):
-            # 尝试从 enhanced_context.realtime 获取
-            enhanced_context = context_snapshot.get("enhanced_context") or {}
-            realtime = enhanced_context.get("realtime") or {}
-            current_price = realtime.get("price")
-            change_pct = realtime.get("change_pct") or realtime.get("change_60d")
-            
-            # 也尝试从 realtime_quote_raw 获取
-            if current_price is None:
-                realtime_quote_raw = context_snapshot.get("realtime_quote_raw") or {}
-                current_price = realtime_quote_raw.get("price")
-                change_pct = change_pct or realtime_quote_raw.get("change_pct") or realtime_quote_raw.get("pct_chg")
-        
-        raw_result = result.get("raw_result")
-        if not isinstance(raw_result, dict):
-            raw_result = {}
-        report_language = normalize_report_language(
-            result.get("report_language")
-            or raw_result.get("report_language")
-            or (
-                context_snapshot.get("report_language")
-                if isinstance(context_snapshot, dict)
-                else None
-            )
-        )
-        stock_name = get_localized_stock_name(
-            result.get("stock_name"),
-            result.get("stock_code", ""),
-            report_language,
-        )
 
-        # 构建响应模型
-        meta = ReportMeta(
-            id=result.get("id"),
-            query_id=result.get("query_id", ""),
-            stock_code=result.get("stock_code", ""),
-            stock_name=stock_name,
-            report_type=result.get("report_type"),
-            report_language=report_language,
-            created_at=result.get("created_at"),
-            current_price=current_price,
-            change_pct=change_pct,
-            model_used=normalize_model_used(result.get("model_used"))
-        )
-        
-        summary = ReportSummary(
-            analysis_summary=result.get("analysis_summary"),
-            operation_advice=localize_operation_advice(
-                result.get("operation_advice"),
-                report_language,
-            ),
-            trend_prediction=localize_trend_prediction(
-                result.get("trend_prediction"),
-                report_language,
-            ),
-            sentiment_score=result.get("sentiment_score"),
-            sentiment_label=(
-                get_sentiment_label(result.get("sentiment_score"), report_language)
-                if result.get("sentiment_score") is not None
-                else result.get("sentiment_label")
-            )
-        )
-        
-        strategy = ReportStrategy(
-            ideal_buy=result.get("ideal_buy"),
-            secondary_buy=result.get("secondary_buy"),
-            stop_loss=result.get("stop_loss"),
-            take_profit=result.get("take_profit")
-        )
-        
-        fallback_fundamental = db_manager.get_latest_fundamental_snapshot(
-            query_id=result.get("query_id", ""),
-            code=result.get("stock_code", ""),
-        )
-        extracted_fundamental = extract_fundamental_detail_fields(
-            context_snapshot=result.get("context_snapshot"),
-            fallback_fundamental_payload=fallback_fundamental,
-        )
-        extracted_boards = extract_board_detail_fields(
-            context_snapshot=result.get("context_snapshot"),
-            fallback_fundamental_payload=fallback_fundamental,
-        )
-
-        details = ReportDetails(
-            news_content=result.get("news_content"),
-            raw_result=result.get("raw_result"),
-            context_snapshot=result.get("context_snapshot"),
-            financial_report=extracted_fundamental.get("financial_report"),
-            dividend_metrics=extracted_fundamental.get("dividend_metrics"),
-            belong_boards=extracted_boards.get("belong_boards"),
-            sector_rankings=extracted_boards.get("sector_rankings"),
-        )
-        
-        return AnalysisReport(
-            meta=meta,
-            summary=summary,
-            strategy=strategy,
-            details=details
-        )
+        return build_analysis_report_from_detail_dict(result, db_manager)
         
     except HTTPException:
         raise

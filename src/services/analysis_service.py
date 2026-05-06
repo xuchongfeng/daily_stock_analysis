@@ -12,9 +12,12 @@
 
 import logging
 import uuid
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
 
 from src.repositories.analysis_repo import AnalysisRepository
+
+if TYPE_CHECKING:
+    from src.storage import AnalysisHistory
 from src.report_language import (
     get_sentiment_label,
     get_localized_stock_name,
@@ -77,6 +80,28 @@ class AnalysisService:
             
             # 获取配置
             config = get_config()
+            ttl = float(getattr(config, "analysis_reuse_ttl_hours", 3.0) or 0.0)
+            if not force_refresh and ttl > 0:
+                reuse_fn = getattr(self.repo, "get_latest_reusable_analysis", None)
+                recent = (
+                    reuse_fn(stock_code, within_hours=ttl)
+                    if callable(reuse_fn)
+                    else None
+                )
+                if recent is not None:
+                    logger.info(
+                        "分析结果复用（近 %.1f 小时内、不区分用户）: stock=%s source_query_id=%s created_at=%s -> query_id=%s",
+                        ttl,
+                        stock_code,
+                        recent.query_id,
+                        recent.created_at.isoformat() if recent.created_at else "",
+                        query_id,
+                    )
+                    return self._build_analysis_response_from_history(
+                        recent,
+                        query_id=query_id,
+                        report_type_fallback=report_type,
+                    )
             
             # 创建分析流水线
             pipeline = StockAnalysisPipeline(
@@ -178,6 +203,75 @@ class AnalysisService:
         
         return {
             "stock_code": result.code,
+            "stock_name": stock_name,
+            "report": report,
+        }
+
+    def _build_analysis_response_from_history(
+        self,
+        record: "AnalysisHistory",
+        *,
+        query_id: str,
+        report_type_fallback: str = "detailed",
+    ) -> Dict[str, Any]:
+        """由 analysis_history 行构造与 ``_build_analysis_response`` 一致的 ``report`` 结构（供跨用户短时复用）。"""
+        from src.utils.data_processing import parse_json_field, normalize_model_used
+        from src.report_language import (
+            get_sentiment_label,
+            get_localized_stock_name,
+            localize_operation_advice,
+            localize_trend_prediction,
+            normalize_report_language,
+        )
+
+        raw_result = parse_json_field(record.raw_result)
+        rd = raw_result if isinstance(raw_result, dict) else {}
+        report_language = normalize_report_language(rd.get("report_language"))
+        stock_name = get_localized_stock_name(record.name, record.code, report_language)
+        sentiment_label = get_sentiment_label(record.sentiment_score, report_language)
+
+        rt = getattr(record, "report_type", None) or report_type_fallback
+
+        def _sniper_str(v: Any) -> Optional[str]:
+            if v is None:
+                return None
+            return str(v)
+
+        report = {
+            "meta": {
+                "query_id": query_id,
+                "stock_code": record.code,
+                "stock_name": stock_name,
+                "report_type": rt,
+                "report_language": report_language,
+                "created_at": record.created_at.isoformat() if record.created_at else None,
+                "current_price": rd.get("current_price"),
+                "change_pct": rd.get("change_pct"),
+                "model_used": normalize_model_used(rd.get("model_used")),
+            },
+            "summary": {
+                "analysis_summary": record.analysis_summary,
+                "operation_advice": localize_operation_advice(record.operation_advice, report_language),
+                "trend_prediction": localize_trend_prediction(record.trend_prediction, report_language),
+                "sentiment_score": record.sentiment_score,
+                "sentiment_label": sentiment_label,
+            },
+            "strategy": {
+                "ideal_buy": _sniper_str(getattr(record, "ideal_buy", None)),
+                "secondary_buy": _sniper_str(getattr(record, "secondary_buy", None)),
+                "stop_loss": _sniper_str(getattr(record, "stop_loss", None)),
+                "take_profit": _sniper_str(getattr(record, "take_profit", None)),
+            },
+            "details": {
+                "news_summary": rd.get("news_summary"),
+                "technical_analysis": rd.get("technical_analysis"),
+                "fundamental_analysis": rd.get("fundamental_analysis"),
+                "risk_warning": rd.get("risk_warning"),
+            },
+        }
+
+        return {
+            "stock_code": record.code,
             "stock_name": stock_name,
             "report": report,
         }
