@@ -112,6 +112,12 @@ class TaskInfo:
             portal_user_id=self.portal_user_id,
         )
 
+    def to_event_dict(self) -> Dict[str, Any]:
+        """Serialize task for SSE transport, with internal ownership marker."""
+        payload = self.to_dict()
+        payload["_portal_user_id"] = self.portal_user_id
+        return payload
+
 
 class DuplicateTaskError(Exception):
     """
@@ -413,7 +419,7 @@ class AnalysisTaskQueue:
             # Broadcasting here also preserves batch rollback semantics because we only
             # reach this point after every submit in the batch has succeeded.
             for task_info in accepted:
-                self._broadcast_event("task_created", task_info.to_dict())
+                self._broadcast_event("task_created", task_info.to_event_dict())
 
         return accepted, duplicates
 
@@ -527,7 +533,7 @@ class AnalysisTaskQueue:
 
             task_snapshot = task.copy()
 
-        self._broadcast_event(event_type, task_snapshot.to_dict())
+        self._broadcast_event(event_type, task_snapshot.to_event_dict())
         return task_snapshot
     
     # ========== 任务执行 ==========
@@ -562,7 +568,7 @@ class AnalysisTaskQueue:
             task.message = "正在分析中..."
             task.progress = 10
         
-        self._broadcast_event("task_started", task.to_dict())
+        self._broadcast_event("task_started", task.to_event_dict())
         
         try:
             # 导入分析服务（延迟导入避免循环依赖）
@@ -607,7 +613,7 @@ class AnalysisTaskQueue:
                         if dedupe_key in self._analyzing_stocks:
                             del self._analyzing_stocks[dedupe_key]
                 
-                self._broadcast_event("task_completed", task.to_dict())
+                self._broadcast_event("task_completed", task.to_event_dict())
                 logger.info(f"[TaskQueue] 任务完成: {task_id} ({stock_code})")
                 
                 # 清理过期任务
@@ -635,7 +641,7 @@ class AnalysisTaskQueue:
                     if dedupe_key in self._analyzing_stocks:
                         del self._analyzing_stocks[dedupe_key]
             
-            self._broadcast_event("task_failed", task.to_dict())
+            self._broadcast_event("task_failed", task.to_event_dict())
             
             # 清理过期任务
             self._cleanup_old_tasks()

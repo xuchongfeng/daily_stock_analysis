@@ -264,6 +264,7 @@ def get_history_list(
 )
 def delete_history_records(
     request: DeleteHistoryRequest = Body(...),
+    portal_uid: Optional[int] = Depends(optional_portal_user_id),
     db_manager: DatabaseManager = Depends(get_database_manager)
 ) -> DeleteHistoryResponse:
     """
@@ -281,7 +282,7 @@ def delete_history_records(
 
     try:
         service = HistoryService(db_manager)
-        deleted = service.delete_history_records(record_ids)
+        deleted = service.delete_history_records(record_ids, portal_user_id=portal_uid)
         return DeleteHistoryResponse(deleted=deleted)
     except HTTPException:
         raise
@@ -357,6 +358,7 @@ def get_latest_analysis_summaries(
 )
 def get_history_detail(
     record_id: str,
+    portal_uid: Optional[int] = Depends(optional_portal_user_id),
     db_manager: DatabaseManager = Depends(get_database_manager)
 ) -> AnalysisReport:
     """
@@ -379,7 +381,7 @@ def get_history_detail(
         service = HistoryService(db_manager)
         
         # Try integer ID first, fall back to query_id string lookup
-        result = service.resolve_and_get_detail(record_id)
+        result = service.resolve_and_get_detail(record_id, portal_user_id=portal_uid)
 
         if result is None:
             raise HTTPException(
@@ -418,6 +420,7 @@ def get_history_detail(
 def get_history_news(
     record_id: str,
     limit: int = Query(20, ge=1, le=100, description="返回数量限制"),
+    portal_uid: Optional[int] = Depends(optional_portal_user_id),
     db_manager: DatabaseManager = Depends(get_database_manager)
 ) -> NewsIntelResponse:
     """
@@ -436,7 +439,11 @@ def get_history_news(
     """
     try:
         service = HistoryService(db_manager)
-        items = service.resolve_and_get_news(record_id=record_id, limit=limit)
+        items = service.resolve_and_get_news(
+            record_id=record_id,
+            limit=limit,
+            portal_user_id=portal_uid,
+        )
 
         response_items = [
             NewsIntelItem(
@@ -476,6 +483,7 @@ def get_history_news(
 )
 def get_history_markdown(
     record_id: str,
+    portal_uid: Optional[int] = Depends(optional_portal_user_id),
     db_manager: DatabaseManager = Depends(get_database_manager)
 ) -> MarkdownReportResponse:
     """
@@ -497,7 +505,7 @@ def get_history_markdown(
     service = HistoryService(db_manager)
 
     try:
-        markdown_content = service.get_markdown_report(record_id)
+        markdown_content = service.get_markdown_report(record_id, portal_user_id=portal_uid)
     except MarkdownReportGenerationError as e:
         logger.error(f"Markdown report generation failed for {record_id}: {e.message}")
         raise HTTPException(

@@ -9,7 +9,7 @@ import logging
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
@@ -39,6 +39,34 @@ TOOL_DISPLAY_NAMES: Dict[str, str] = {
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _portal_uid(request: Request) -> Optional[int]:
+    from src.portal_auth import PORTAL_COOKIE_NAME, verify_portal_session_token
+
+    token = request.cookies.get(PORTAL_COOKIE_NAME)
+    if not token:
+        return None
+    uid = verify_portal_session_token(token)
+    return uid if isinstance(uid, int) else None
+
+
+def _scoped_session_id(portal_uid: Optional[int], session_id: Optional[str]) -> str:
+    raw = (session_id or "").strip() or str(uuid.uuid4())
+    if portal_uid is None:
+        return raw
+    prefix = f"portal_{portal_uid}:"
+    if raw.startswith(prefix):
+        return raw
+    return f"{prefix}{raw}"
+
+
+def _assert_session_access(portal_uid: Optional[int], session_id: str) -> None:
+    if portal_uid is None:
+        return
+    prefix = f"portal_{portal_uid}:"
+    if not str(session_id or "").startswith(prefix):
+        raise HTTPException(status_code=404, detail="session_not_found")
 
 class ChatRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -146,7 +174,7 @@ async def get_strategies():
     )
 
 @router.post("/chat", response_model=ChatResponse)
-async def agent_chat(request: ChatRequest):
+async def agent_chat(request: ChatRequest, http_request: Request):
     """
     Chat with the AI Agent.
     """
@@ -155,7 +183,7 @@ async def agent_chat(request: ChatRequest):
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
         
-    session_id = request.session_id or str(uuid.uuid4())
+    session_id = _scoped_session_id(_portal_uid(http_request), request.session_id)
     
     try:
         skills = request.effective_skills
@@ -205,7 +233,11 @@ class SessionMessagesResponse(BaseModel):
 
 
 @router.get("/chat/sessions", response_model=SessionsResponse)
-async def list_chat_sessions(limit: int = 50, user_id: Optional[str] = None):
+async def list_chat_sessions(
+    http_request: Request,
+    limit: int = 50,
+    user_id: Optional[str] = None,
+):
     """获取聊天会话列表
 
     Args:
@@ -217,25 +249,37 @@ async def list_chat_sessions(limit: int = 50, user_id: Optional[str] = None):
             ``feishu_ou_abc``.
     """
     from src.storage import get_db
+    portal_uid = _portal_uid(http_request)
+    if portal_uid is not None:
+        session_prefix = f"portal_{portal_uid}:"
+    else:
+        session_prefix = user_id
+
     sessions = get_db().get_chat_sessions(
         limit=limit,
-        session_prefix=user_id,
-        extra_session_ids=[user_id] if user_id else None,
+        session_prefix=session_prefix,
+        extra_session_ids=[session_prefix] if session_prefix else None,
     )
     return SessionsResponse(sessions=sessions)
 
 
 @router.get("/chat/sessions/{session_id}", response_model=SessionMessagesResponse)
-async def get_chat_session_messages(session_id: str, limit: int = 100):
+async def get_chat_session_messages(
+    session_id: str,
+    http_request: Request,
+    limit: int = 100,
+):
     """获取单个会话的完整消息"""
+    _assert_session_access(_portal_uid(http_request), session_id)
     from src.storage import get_db
     messages = get_db().get_conversation_messages(session_id, limit=limit)
     return SessionMessagesResponse(session_id=session_id, messages=messages)
 
 
 @router.delete("/chat/sessions/{session_id}")
-async def delete_chat_session(session_id: str):
+async def delete_chat_session(session_id: str, http_request: Request):
     """删除指定会话"""
+    _assert_session_access(_portal_uid(http_request), session_id)
     from src.storage import get_db
     count = get_db().delete_conversation_session(session_id)
     return {"deleted": count}
@@ -371,7 +415,7 @@ async def agent_research(request: ResearchRequest):
 
 
 @router.post("/chat/stream")
-async def agent_chat_stream(request: ChatRequest):
+async def agent_chat_stream(request: ChatRequest, http_request: Request):
     """
     Chat with the AI Agent, streaming progress via SSE.
     Each SSE event is a JSON object with a 'type' field:
@@ -386,7 +430,7 @@ async def agent_chat_stream(request: ChatRequest):
     if not config.is_agent_available():
         raise HTTPException(status_code=400, detail="Agent mode is not enabled")
 
-    session_id = request.session_id or str(uuid.uuid4())
+    session_id = _scoped_session_id(_portal_uid(http_request), request.session_id)
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 

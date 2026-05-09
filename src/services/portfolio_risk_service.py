@@ -33,12 +33,14 @@ class PortfolioRiskService:
         account_id: Optional[int] = None,
         as_of: Optional[date] = None,
         cost_method: str = "fifo",
+        owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         as_of_date = as_of or date.today()
         snapshot = self.portfolio_service.get_portfolio_snapshot(
             account_id=account_id,
             as_of=as_of_date,
             cost_method=cost_method,
+            owner_id=owner_id,
         )
 
         thresholds = {
@@ -64,6 +66,7 @@ class PortfolioRiskService:
             as_of_date=as_of_date,
             cost_method=cost_method,
             lookback_days=thresholds["lookback_days"],
+            owner_id=owner_id,
         )
         drawdown = self._build_drawdown(
             account_id=account_id,
@@ -71,6 +74,7 @@ class PortfolioRiskService:
             cost_method=cost_method,
             threshold_pct=thresholds["drawdown_alert_pct"],
             lookback_days=thresholds["lookback_days"],
+            owner_id=owner_id,
         )
         stop_loss = self._build_stop_loss(snapshot, thresholds)
 
@@ -93,6 +97,7 @@ class PortfolioRiskService:
         as_of_date: date,
         cost_method: str,
         lookback_days: int,
+        owner_id: Optional[str] = None,
     ) -> None:
         if lookback_days <= 0:
             return
@@ -101,6 +106,7 @@ class PortfolioRiskService:
             account_id=account_id,
             as_of_date=as_of_date,
             lookback_days=lookback_days,
+            owner_id=owner_id,
         )
         if start_date > as_of_date:
             return
@@ -120,12 +126,15 @@ class PortfolioRiskService:
                         account_id=account_id,
                         as_of=current_date,
                         cost_method=cost_method,
+                        owner_id=owner_id,
                     )
                     existing_dates.add(current_date)
                 current_date += timedelta(days=1)
             return
 
-        account_ids = [int(account.id) for account in self.repo.list_accounts(include_inactive=False)]
+        account_ids = [
+            int(account.id) for account in self.repo.list_accounts(include_inactive=False, owner_id=owner_id)
+        ]
         if not account_ids:
             return
         existing_pairs = {(int(row.account_id), row.snapshot_date) for row in existing_rows}
@@ -136,6 +145,7 @@ class PortfolioRiskService:
                     account_id=None,
                     as_of=current_date,
                     cost_method=cost_method,
+                    owner_id=owner_id,
                 )
                 for aid in account_ids:
                     existing_pairs.add((aid, current_date))
@@ -147,6 +157,7 @@ class PortfolioRiskService:
         account_id: Optional[int],
         as_of_date: date,
         lookback_days: int,
+        owner_id: Optional[str] = None,
     ) -> date:
         window_start = as_of_date - timedelta(days=lookback_days)
         if account_id is not None:
@@ -154,7 +165,7 @@ class PortfolioRiskService:
             return max(window_start, first_activity or as_of_date)
 
         first_activity_candidates: List[date] = []
-        for account in self.repo.list_accounts(include_inactive=False):
+        for account in self.repo.list_accounts(include_inactive=False, owner_id=owner_id):
             first_activity = self.repo.get_first_activity_date(account_id=int(account.id), as_of=as_of_date)
             if first_activity is not None:
                 first_activity_candidates.append(first_activity)
@@ -354,6 +365,7 @@ class PortfolioRiskService:
         cost_method: str,
         threshold_pct: float,
         lookback_days: int,
+        owner_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         rows = self.repo.list_daily_snapshots_for_risk(
             as_of=as_of_date,
@@ -361,6 +373,12 @@ class PortfolioRiskService:
             account_id=account_id,
             lookback_days=lookback_days,
         )
+        if owner_id is not None:
+            allowed_ids = {
+                int(account.id)
+                for account in self.repo.list_accounts(include_inactive=True, owner_id=owner_id)
+            }
+            rows = [row for row in rows if int(row.account_id) in allowed_ids]
         if not rows:
             return {
                 "series_points": 0,

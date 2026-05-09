@@ -117,21 +117,21 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string }> 
     <div className="mb-3">
       <span className="label-uppercase">{title}</span>
     </div>
-    <MetricRow label="Direction Accuracy" value={pct(metrics.directionAccuracyPct)} accent />
-    <MetricRow label="Win Rate" value={pct(metrics.winRatePct)} accent />
-    <MetricRow label="Avg Sim. Return" value={pct(metrics.avgSimulatedReturnPct)} />
-    <MetricRow label="Avg Stock Return" value={pct(metrics.avgStockReturnPct)} />
-    <MetricRow label="SL Trigger Rate" value={pct(metrics.stopLossTriggerRate)} />
-    <MetricRow label="TP Trigger Rate" value={pct(metrics.takeProfitTriggerRate)} />
-    <MetricRow label="Avg Days to Hit" value={metrics.avgDaysToFirstHit != null ? metrics.avgDaysToFirstHit.toFixed(1) : '--'} />
+    <MetricRow label="方向准确率" value={pct(metrics.directionAccuracyPct)} accent />
+    <MetricRow label="胜率" value={pct(metrics.winRatePct)} accent />
+    <MetricRow label="平均模拟收益" value={pct(metrics.avgSimulatedReturnPct)} />
+    <MetricRow label="平均标的收益" value={pct(metrics.avgStockReturnPct)} />
+    <MetricRow label="止损触发率" value={pct(metrics.stopLossTriggerRate)} />
+    <MetricRow label="止盈触发率" value={pct(metrics.takeProfitTriggerRate)} />
+    <MetricRow label="平均触发天数" value={metrics.avgDaysToFirstHit != null ? metrics.avgDaysToFirstHit.toFixed(1) : '--'} />
     <div className="backtest-metric-footer">
-      <span className="text-xs text-muted-text">Evaluations</span>
+      <span className="text-xs text-muted-text">评估样本</span>
       <span className="text-xs text-secondary-text font-mono">
         {Number(metrics.completedCount)} / {Number(metrics.totalEvaluations)}
       </span>
     </div>
     <div className="flex items-center justify-between">
-      <span className="text-xs text-muted-text">W / L / N</span>
+      <span className="text-xs text-muted-text">赢 / 亏 / 中性</span>
       <span className="text-xs font-mono">
         <span className="text-success">{metrics.winCount}</span>
         {' / '}
@@ -147,12 +147,12 @@ const PerformanceCard: React.FC<{ metrics: PerformanceMetrics; title: string }> 
 
 const RunSummary: React.FC<{ data: BacktestRunResponse }> = ({ data }) => (
   <div className="backtest-summary animate-fade-in">
-    <span className="label">Processed: <span className="value">{data.processed}</span></span>
-    <span className="label">Saved: <span className="value primary">{data.saved}</span></span>
-    <span className="label">Completed: <span className="value success">{data.completed}</span></span>
-    <span className="label">Insufficient: <span className="value warning">{data.insufficient}</span></span>
+    <span className="label">已处理：<span className="value">{data.processed}</span></span>
+    <span className="label">已保存：<span className="value primary">{data.saved}</span></span>
+    <span className="label">已完成：<span className="value success">{data.completed}</span></span>
+    <span className="label">样本不足：<span className="value warning">{data.insufficient}</span></span>
     {data.errors > 0 && (
-      <span className="label">Errors: <span className="value danger">{data.errors}</span></span>
+      <span className="label">错误：<span className="value danger">{data.errors}</span></span>
     )}
   </div>
 );
@@ -340,13 +340,13 @@ const BacktestPage: React.FC = () => {
               value={codeFilter}
               onChange={(e) => setCodeFilter(e.target.value.toUpperCase())}
               onKeyDown={handleKeyDown}
-              placeholder="Filter by stock code (leave empty for all)"
+              placeholder="按股票代码筛选（留空表示全部）"
               disabled={isRunning}
               className={BACKTEST_INPUT_CLASS}
             />
           </div>
           <div className="flex items-center gap-2 whitespace-nowrap lg:w-72 lg:justify-between">
-            <span className="text-xs text-muted-text">Rule</span>
+            <span className="text-xs text-muted-text">选股规则</span>
             <select
               aria-label="Backtest stock selection rule"
               value={selectionRule}
@@ -354,8 +354,8 @@ const BacktestPage: React.FC = () => {
               disabled={isRunning || Boolean(codeFilter.trim())}
               className={`${BACKTEST_COMPACT_INPUT_CLASS} w-56`}
             >
-              <option value="">None</option>
-              <option value="signal_digest_top30_14d">Signal Digest 14D Top30</option>
+              <option value="">不限制</option>
+              <option value="signal_digest_top30_14d">信号日报 14 天 Top30</option>
             </select>
           </div>
           <button
@@ -364,10 +364,10 @@ const BacktestPage: React.FC = () => {
             disabled={isLoadingResults}
             className="btn-secondary flex items-center gap-1.5 whitespace-nowrap"
           >
-            Filter
+            筛选
           </button>
           <div className="flex items-center gap-2 whitespace-nowrap lg:w-40 lg:justify-between">
-            <span className="text-xs text-muted-text">Window</span>
+            <span className="text-xs text-muted-text">评估窗口</span>
             <input
               type="number"
               min={1}
@@ -380,7 +380,7 @@ const BacktestPage: React.FC = () => {
             />
           </div>
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xs text-muted-text">From</span>
+            <span className="text-xs text-muted-text">开始日期</span>
             <input
               type="date"
               aria-label="Analysis date from"
@@ -392,7 +392,7 @@ const BacktestPage: React.FC = () => {
             />
           </div>
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <span className="text-xs text-muted-text">To</span>
+            <span className="text-xs text-muted-text">结束日期</span>
             <input
               type="date"
               aria-label="Analysis date to"
@@ -410,7 +410,7 @@ const BacktestPage: React.FC = () => {
             className={`backtest-force-btn ${isNextDayValidation ? 'active' : ''}`}
           >
             <span className="dot" />
-            1D Validation
+            T+1 验证
           </button>
           <button
             type="button"
@@ -419,7 +419,7 @@ const BacktestPage: React.FC = () => {
             className={`backtest-force-btn ${forceRerun ? 'active' : ''}`}
           >
             <span className="dot" />
-            Force
+            强制重跑
           </button>
           <button
             type="button"

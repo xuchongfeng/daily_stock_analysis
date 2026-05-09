@@ -249,7 +249,7 @@ class HistoryService:
             }
         return items
 
-    def _resolve_record(self, record_id: str):
+    def _resolve_record(self, record_id: str, *, portal_user_id: Optional[int] = None):
         """
         Resolve a record_id parameter to an AnalysisHistory object.
 
@@ -270,9 +270,18 @@ class HistoryService:
         except (ValueError, TypeError):
             pass
         # Fall back to query_id lookup
-        return self.db.get_latest_analysis_by_query_id(record_id)
+        record = self.db.get_latest_analysis_by_query_id(record_id)
+        if record and portal_user_id is not None:
+            if getattr(record, "portal_user_id", None) != portal_user_id:
+                return None
+        return record
 
-    def resolve_and_get_detail(self, record_id: str) -> Optional[Dict[str, Any]]:
+    def resolve_and_get_detail(
+        self,
+        record_id: str,
+        *,
+        portal_user_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Resolve record_id (int PK or query_id string) and return history detail.
 
@@ -283,15 +292,23 @@ class HistoryService:
             Complete analysis report dict, or None
         """
         try:
-            record = self._resolve_record(record_id)
+            record = self._resolve_record(record_id, portal_user_id=portal_user_id)
             if not record:
+                return None
+            if portal_user_id is not None and getattr(record, "portal_user_id", None) != portal_user_id:
                 return None
             return self._record_to_detail_dict(record)
         except Exception as e:
             logger.error(f"resolve_and_get_detail failed for {record_id}: {e}", exc_info=True)
             return None
 
-    def resolve_and_get_news(self, record_id: str, limit: int = 20) -> List[Dict[str, str]]:
+    def resolve_and_get_news(
+        self,
+        record_id: str,
+        limit: int = 20,
+        *,
+        portal_user_id: Optional[int] = None,
+    ) -> List[Dict[str, str]]:
         """
         Resolve record_id (int PK or query_id string) and return associated news.
 
@@ -303,9 +320,11 @@ class HistoryService:
             List of news intel dicts
         """
         try:
-            record = self._resolve_record(record_id)
+            record = self._resolve_record(record_id, portal_user_id=portal_user_id)
             if not record:
                 logger.warning(f"resolve_and_get_news: record not found for {record_id}")
+                return []
+            if portal_user_id is not None and getattr(record, "portal_user_id", None) != portal_user_id:
                 return []
             return self.get_news_intel(query_id=record.query_id, limit=limit)
         except Exception as e:
@@ -404,7 +423,7 @@ class HistoryService:
             "context_snapshot": context_snapshot,
         }
 
-    def delete_history_records(self, record_ids: List[int]) -> int:
+    def delete_history_records(self, record_ids: List[int], *, portal_user_id: Optional[int] = None) -> int:
         """
         Delete specified analysis history records.
 
@@ -418,7 +437,18 @@ class HistoryService:
             Exception: Re-raises any storage-layer exception so the API caller
                        receives a proper 500 error instead of a silent success.
         """
-        return self.db.delete_analysis_history_records(record_ids)
+        if portal_user_id is None:
+            return self.db.delete_analysis_history_records(record_ids)
+
+        # Portal users can only delete their own records.
+        allowed_ids: List[int] = []
+        for rid in record_ids:
+            record = self.db.get_analysis_history_by_id(rid)
+            if record and getattr(record, "portal_user_id", None) == portal_user_id:
+                allowed_ids.append(rid)
+        if not allowed_ids:
+            return 0
+        return self.db.delete_analysis_history_records(allowed_ids)
 
     def get_news_intel(self, query_id: str, limit: int = 20) -> List[Dict[str, str]]:
         """
@@ -555,7 +585,12 @@ class HistoryService:
         else:
             return "极度悲观"
 
-    def get_markdown_report(self, record_id: str) -> Optional[str]:
+    def get_markdown_report(
+        self,
+        record_id: str,
+        *,
+        portal_user_id: Optional[int] = None,
+    ) -> Optional[str]:
         """
         Generate a Markdown report for a single analysis history record.
 
@@ -571,9 +606,12 @@ class HistoryService:
         Raises:
             MarkdownReportGenerationError: If report generation fails due to internal errors
         """
-        record = self._resolve_record(record_id)
+        record = self._resolve_record(record_id, portal_user_id=portal_user_id)
         if not record:
             logger.warning(f"get_markdown_report: record not found for {record_id}")
+            return None
+        if portal_user_id is not None and getattr(record, "portal_user_id", None) != portal_user_id:
+            logger.warning("get_markdown_report: portal user %s has no access to %s", portal_user_id, record_id)
             return None
 
         # Rebuild AnalysisResult from raw_result

@@ -19,10 +19,6 @@ import { cn } from '../../utils/cn';
 import { rowsHaveTradeVolume, toVolumeHistogramData } from '../../utils/klineVolumeHistogram';
 import { buildStrategyPriceLineSpecs } from '../../utils/strategyPriceLines';
 
-/* eslint-disable react-hooks/set-state-in-effect --
- * K 线拉取与 lightweight-charts 挂载：需在 effect 内同步重置加载态与 chartErr。
- */
-
 export type KlineRangePreset = '1m' | '6m' | '1y';
 
 const KLINE_RANGE_DAYS: Record<KlineRangePreset, number> = {
@@ -122,14 +118,19 @@ export const StockDailyKlineCard: React.FC<StockDailyKlineCardProps> = ({
     const code = (stockCode || '').trim();
     if (!code) {
       setRows([]);
+       
       setFetchErr(true);
       return;
     }
 
     let cancelled = false;
+     
     setRows(null);
+     
     setFetchErr(false);
+     
     setChartErr(false);
+     
     setScoreLine({ points: [], source: 'none' });
 
     void (async () => {

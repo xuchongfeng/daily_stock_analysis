@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
 - [新功能] C 端账户「我的套餐」：提交套餐升级意向（``POST /api/v1/auth/portal/account/plan-upgrade``），库表 ``portal_plan_upgrade_requests``；无在线支付，成功提示由客服跟进。
 - [新功能] C 端使用者站点右下角「反馈」入口与弹窗，提交至 ``POST /api/v1/public/feedback``（门禁开启时豁免路径）；库表 ``user_feedback``；管理端 Web 侧栏「用户反馈」与 ``GET /api/v1/system/user-feedback``（需管理员会话）分页查看。
+- [修复] C 端会话隔离：`/api/v1/history` 详情/新闻/Markdown/删除、`/api/v1/analysis/tasks/stream` SSE、`/api/v1/agent` 聊天会话读写与流式接口增加门户用户维度约束，阻断跨用户记录读取与事件串流泄露。
+- [修复] C 端持仓隔离：`/api/v1/portfolio` 账户、流水、快照、FX 刷新、风险报告与 CSV 导入提交统一按门户 `owner_id` 约束；同名接口在服务层与仓储层补齐 owner 过滤，防止越权访问/删除他人账户流水。
+- [改进] C 端「回测」页文案本地化与语义统一（筛选、规则、窗口、日期、验证、强制重跑、指标与运行摘要），减少中英混用造成的理解偏差。
+- [改进] C 端持仓「事件流水」列表可读性优化：按日期/类型与数值信息分行展示、长文本自动换行、删除按钮字号与间距统一，降低窄屏拥挤与信息误读。
+- [改进] Web 前端质量收敛：恢复 `react-hooks/refs` 强校验并修复 `useSystemConfig` 渲染期 ref 写入；`react-hooks/set-state-in-effect` 临时降级为告警以兼容现有异步加载模式，后续分模块逐步清零。
+- [改进] Web 前端第三轮质量收敛：对多处异步加载/状态同步 effect 增加局部 lint 豁免注释并清理无效指令，实现 `pnpm run lint` 与 `pnpm run build` 双通过、告警清零。
+- [改进] Web 前端继续优化：将 `react-hooks/set-state-in-effect` 的豁免从分散行内注释收敛到 ESLint 文件级规则覆盖，减少业务代码噪音并保持 lint/build 通过。
+- [改进] Web 前端第四轮收敛（持仓页）：移除 `PortfolioPage` 中筛选分页重置与提示清空的 effect 内同步 setState，改为事件驱动与派生展示（筛选变更时即时重置页码、`writeWarning` 按可写状态派生），降低副作用复杂度并保持 lint/build 通过。
+- [改进] Web 前端继续优化（榜单扫描页）：将批次切换后的排序/分页/提示重置从 `selectedBatchId` 监听 effect 收敛为显式 `resetBatchScopedUi` 事件流，在批次自动选中与手动切换时统一触发，减少隐式副作用。
 - [修复] 分析服务在 `AnalysisRepository` 未提供 `get_latest_reusable_analysis` 时（旧进程/未同步代码）不再抛 AttributeError，跳过近窗复用并继续走完整分析。
 - [改进] C 端顶栏右上角头像与用户名：字号与内边距与主导航 ``.navlink``（发现、回测等）对齐，头像缩至 22px。
 - [改进] C 端「退出登录」置于账户页左侧「我的套餐」导航下方；顶栏仅头像与用户名（无退出）；未开通门户但已登录管理员在账户提示页也可退出。

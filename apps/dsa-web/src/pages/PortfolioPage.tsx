@@ -103,6 +103,7 @@ function portfolioCheckupStatusLabel(row: PortfolioCheckupRow, checkupRunning: b
 type FxRefreshFeedback = {
   tone: 'neutral' | 'success' | 'warning';
   text: string;
+  viewKey: string;
 };
 
 type FxRefreshContext = {
@@ -155,11 +156,12 @@ function formatBrokerLabel(value: string, displayName?: string): string {
   return value;
 }
 
-function buildFxRefreshFeedback(data: PortfolioFxRefreshResponse): FxRefreshFeedback {
+function buildFxRefreshFeedback(data: PortfolioFxRefreshResponse, viewKey: string): FxRefreshFeedback {
   if (data.refreshEnabled === false) {
     return {
       tone: 'neutral',
       text: '汇率在线刷新已被禁用。',
+      viewKey,
     };
   }
 
@@ -167,6 +169,7 @@ function buildFxRefreshFeedback(data: PortfolioFxRefreshResponse): FxRefreshFeed
     return {
       tone: 'neutral',
       text: '当前范围无可刷新的汇率对。',
+      viewKey,
     };
   }
 
@@ -174,6 +177,7 @@ function buildFxRefreshFeedback(data: PortfolioFxRefreshResponse): FxRefreshFeed
     return {
       tone: 'success',
       text: `汇率已刷新，共更新 ${data.updatedCount} 对。`,
+      viewKey,
     };
   }
 
@@ -182,12 +186,14 @@ function buildFxRefreshFeedback(data: PortfolioFxRefreshResponse): FxRefreshFeed
     return {
       tone: 'warning',
       text: `已尝试刷新，但仍有部分货币对使用 stale/fallback 汇率。${summary}`,
+      viewKey,
     };
   }
 
   return {
     tone: 'warning',
     text: `在线刷新未完全成功。${summary}`,
+    viewKey,
   };
 }
 
@@ -228,7 +234,7 @@ const PortfolioPage: React.FC = () => {
   const [snapshot, setSnapshot] = useState<PortfolioSnapshotResponse | null>(null);
   const [risk, setRisk] = useState<PortfolioRiskResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [fxRefreshing, setFxRefreshing] = useState(false);
+  const [fxRefreshingViewKey, setFxRefreshingViewKey] = useState<string | null>(null);
   const [fxRefreshFeedback, setFxRefreshFeedback] = useState<FxRefreshFeedback | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [riskWarning, setRiskWarning] = useState<string | null>(null);
@@ -451,6 +457,7 @@ const PortfolioPage: React.FC = () => {
 
   useEffect(() => {
     void loadAccounts();
+     
     void loadBrokers();
   }, [loadAccounts, loadBrokers]);
 
@@ -467,19 +474,7 @@ const PortfolioPage: React.FC = () => {
       viewKey: refreshViewKey,
       requestId: refreshContextRef.current.requestId + 1,
     };
-    setFxRefreshing(false);
-    setFxRefreshFeedback(null);
   }, [refreshViewKey]);
-
-  useEffect(() => {
-    setEventPage(1);
-  }, [eventType, queryAccountId, eventDateFrom, eventDateTo, eventSymbol, eventSide, eventDirection, eventActionType]);
-
-  useEffect(() => {
-    if (!writeBlocked) {
-      setWriteWarning(null);
-    }
-  }, [writeBlocked]);
 
   const positionRows: FlatPosition[] = useMemo(() => {
     if (!snapshot) return [];
@@ -527,6 +522,9 @@ const PortfolioPage: React.FC = () => {
 
   const concentrationPieData = sectorPieData.length > 0 ? sectorPieData : positionFallbackPieData;
   const concentrationMode = sectorPieData.length > 0 ? 'sector' : 'position';
+  const fxRefreshing = fxRefreshingViewKey === refreshViewKey;
+  const visibleFxRefreshFeedback = fxRefreshFeedback?.viewKey === refreshViewKey ? fxRefreshFeedback : null;
+  const visibleWriteWarning = writeBlocked ? writeWarning : null;
 
   const handleTradeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -786,7 +784,7 @@ const PortfolioPage: React.FC = () => {
     };
 
     try {
-      setFxRefreshing(true);
+      setFxRefreshingViewKey(requestedViewKey);
       setFxRefreshFeedback(null);
       const result = await portfolioApi.refreshFx({
         accountId: requestedAccountId,
@@ -803,7 +801,7 @@ const PortfolioPage: React.FC = () => {
       if (!reloaded || !isActiveRefreshContext(requestedViewKey, requestedRequestId)) {
         return;
       }
-      setFxRefreshFeedback(buildFxRefreshFeedback(result));
+      setFxRefreshFeedback(buildFxRefreshFeedback(result, requestedViewKey));
     } catch (err) {
       if (!isActiveRefreshContext(requestedViewKey, requestedRequestId)) {
         return;
@@ -811,7 +809,7 @@ const PortfolioPage: React.FC = () => {
       setError(getParsedApiError(err));
     } finally {
       if (isActiveRefreshContext(requestedViewKey, requestedRequestId)) {
-        setFxRefreshing(false);
+        setFxRefreshingViewKey(null);
       }
     }
   };
@@ -992,7 +990,10 @@ const PortfolioPage: React.FC = () => {
                 <p className="text-xs text-secondary mb-1">账户视图</p>
                 <select
                   value={String(selectedAccount)}
-                  onChange={(e) => setSelectedAccount(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                  onChange={(e) => {
+                    setSelectedAccount(e.target.value === 'all' ? 'all' : Number(e.target.value));
+                    setEventPage(1);
+                  }}
                   className={PORTFOLIO_SELECT_CLASS}
                 >
                   <option value="all">全部账户</option>
@@ -1054,11 +1055,11 @@ const PortfolioPage: React.FC = () => {
           message={riskWarning}
         />
       ) : null}
-      {writeWarning ? (
+      {visibleWriteWarning ? (
         <InlineAlert
           variant="warning"
           title="操作提示"
-          message={writeWarning}
+          message={visibleWriteWarning}
         />
       ) : null}
 
@@ -1159,11 +1160,11 @@ const PortfolioPage: React.FC = () => {
             </button>
           </div>
           <div className="mt-2">{snapshot?.fxStale ? <Badge variant="warning">过期</Badge> : <Badge variant="success">最新</Badge>}</div>
-          {fxRefreshFeedback ? (
+          {visibleFxRefreshFeedback ? (
             <InlineAlert
-              variant={getFxRefreshFeedbackVariant(fxRefreshFeedback.tone)}
+              variant={getFxRefreshFeedbackVariant(visibleFxRefreshFeedback.tone)}
               title="汇率刷新结果"
-              message={fxRefreshFeedback.text}
+              message={visibleFxRefreshFeedback.text}
               className="mt-3 rounded-xl px-3 py-2 text-xs shadow-none"
             />
           ) : null}
@@ -1513,7 +1514,10 @@ const PortfolioPage: React.FC = () => {
           <h3 className="text-sm font-semibold text-foreground mb-3">事件记录</h3>
           <div className="space-y-2">
             <div className="grid grid-cols-2 gap-2">
-              <select className={PORTFOLIO_SELECT_CLASS} value={eventType} onChange={(e) => setEventType(e.target.value as EventType)}>
+              <select className={PORTFOLIO_SELECT_CLASS} value={eventType} onChange={(e) => {
+                setEventType(e.target.value as EventType);
+                setEventPage(1);
+              }}>
                 <option value="trade">交易流水</option>
                 <option value="cash">资金流水</option>
                 <option value="corporate">公司行为</option>
@@ -1523,15 +1527,27 @@ const PortfolioPage: React.FC = () => {
               </button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={eventDateFrom} onChange={(e) => setEventDateFrom(e.target.value)} />
-              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={eventDateTo} onChange={(e) => setEventDateTo(e.target.value)} />
+              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={eventDateFrom} onChange={(e) => {
+                setEventDateFrom(e.target.value);
+                setEventPage(1);
+              }} />
+              <input className={PORTFOLIO_INPUT_CLASS} type="date" value={eventDateTo} onChange={(e) => {
+                setEventDateTo(e.target.value);
+                setEventPage(1);
+              }} />
             </div>
             {(eventType === 'trade' || eventType === 'corporate') ? (
               <input className={PORTFOLIO_INPUT_CLASS} placeholder="按股票代码筛选" value={eventSymbol}
-                onChange={(e) => setEventSymbol(e.target.value)} />
+                onChange={(e) => {
+                  setEventSymbol(e.target.value);
+                  setEventPage(1);
+                }} />
             ) : null}
             {eventType === 'trade' ? (
-              <select className={PORTFOLIO_SELECT_CLASS} value={eventSide} onChange={(e) => setEventSide(e.target.value as '' | PortfolioSide)}>
+              <select className={PORTFOLIO_SELECT_CLASS} value={eventSide} onChange={(e) => {
+                setEventSide(e.target.value as '' | PortfolioSide);
+                setEventPage(1);
+              }}>
                 <option value="">全部买卖方向</option>
                 <option value="buy">买入</option>
                 <option value="sell">卖出</option>
@@ -1539,7 +1555,10 @@ const PortfolioPage: React.FC = () => {
             ) : null}
             {eventType === 'cash' ? (
               <select className={PORTFOLIO_SELECT_CLASS} value={eventDirection}
-                onChange={(e) => setEventDirection(e.target.value as '' | PortfolioCashDirection)}>
+                onChange={(e) => {
+                  setEventDirection(e.target.value as '' | PortfolioCashDirection);
+                  setEventPage(1);
+                }}>
                 <option value="">全部资金方向</option>
                 <option value="in">流入</option>
                 <option value="out">流出</option>
@@ -1547,25 +1566,29 @@ const PortfolioPage: React.FC = () => {
             ) : null}
             {eventType === 'corporate' ? (
               <select className={PORTFOLIO_SELECT_CLASS} value={eventActionType}
-                onChange={(e) => setEventActionType(e.target.value as '' | PortfolioCorporateActionType)}>
+                onChange={(e) => {
+                  setEventActionType(e.target.value as '' | PortfolioCorporateActionType);
+                  setEventPage(1);
+                }}>
                 <option value="">全部公司行为</option>
                 <option value="cash_dividend">现金分红</option>
                 <option value="split_adjustment">拆并股调整</option>
               </select>
             ) : null}
-            <div className="text-[11px] text-secondary">
+            <div className="text-xs text-secondary leading-relaxed">
               {writeBlocked ? '删除修正仅在单账户视图可用。请先选择具体账户后再删除错误流水。' : '如有错误流水，可直接删除后重新录入。'}
             </div>
             <div className="max-h-64 overflow-auto rounded-lg border border-white/10 p-2">
               {eventType === 'trade' && tradeEvents.map((item) => (
-                <div key={`t-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2 text-xs text-secondary">
-                  <div className="min-w-0">
-                    {item.tradeDate} {formatSideLabel(item.side)} {item.symbol} 数量={item.quantity} 价格={item.price}
+                <div key={`t-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2.5 text-sm text-secondary">
+                  <div className="min-w-0 space-y-0.5 break-words">
+                    <div className="text-foreground">{item.tradeDate} · {formatSideLabel(item.side)} · {item.symbol}</div>
+                    <div className="text-xs text-secondary">数量 {item.quantity}，成交价 {item.price}</div>
                   </div>
                   {!writeBlocked ? (
                     <button
                       type="button"
-                      className="btn-secondary shrink-0 !px-3 !py-1 !text-[11px]"
+                      className="btn-secondary shrink-0 !px-3 !py-1 !text-xs"
                       onClick={() => openDeleteDialog({
                         eventType: 'trade',
                         id: item.id,
@@ -1578,14 +1601,15 @@ const PortfolioPage: React.FC = () => {
                 </div>
               ))}
               {eventType === 'cash' && cashEvents.map((item) => (
-                <div key={`c-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2 text-xs text-secondary">
-                  <div className="min-w-0">
-                    {item.eventDate} {formatCashDirectionLabel(item.direction)} {item.amount} {item.currency}
+                <div key={`c-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2.5 text-sm text-secondary">
+                  <div className="min-w-0 space-y-0.5 break-words">
+                    <div className="text-foreground">{item.eventDate} · {formatCashDirectionLabel(item.direction)}</div>
+                    <div className="text-xs text-secondary">{item.amount} {item.currency}</div>
                   </div>
                   {!writeBlocked ? (
                     <button
                       type="button"
-                      className="btn-secondary shrink-0 !px-3 !py-1 !text-[11px]"
+                      className="btn-secondary shrink-0 !px-3 !py-1 !text-xs"
                       onClick={() => openDeleteDialog({
                         eventType: 'cash',
                         id: item.id,
@@ -1598,14 +1622,15 @@ const PortfolioPage: React.FC = () => {
                 </div>
               ))}
               {eventType === 'corporate' && corporateEvents.map((item) => (
-                <div key={`ca-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2 text-xs text-secondary">
-                  <div className="min-w-0">
-                    {item.effectiveDate} {formatCorporateActionLabel(item.actionType)} {item.symbol}
+                <div key={`ca-${item.id}`} className="flex items-start justify-between gap-3 border-b border-white/5 py-2.5 text-sm text-secondary">
+                  <div className="min-w-0 space-y-0.5 break-words">
+                    <div className="text-foreground">{item.effectiveDate} · {formatCorporateActionLabel(item.actionType)}</div>
+                    <div className="text-xs text-secondary">{item.symbol}</div>
                   </div>
                   {!writeBlocked ? (
                     <button
                       type="button"
-                      className="btn-secondary shrink-0 !px-3 !py-1 !text-[11px]"
+                      className="btn-secondary shrink-0 !px-3 !py-1 !text-xs"
                       onClick={() => openDeleteDialog({
                         eventType: 'corporate',
                         id: item.id,

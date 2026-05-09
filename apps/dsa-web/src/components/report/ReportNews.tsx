@@ -41,6 +41,7 @@ export const ReportNews: React.FC<ReportNewsProps> = ({ recordId, limit = 8, lan
 
   useEffect(() => {
     setItems([]);
+     
     setError(null);
 
     if (recordId) {

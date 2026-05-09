@@ -483,7 +483,7 @@ def get_task_list(
     summary="任务状态 SSE 流",
     description="通过 Server-Sent Events 实时推送任务状态变化"
 )
-async def task_stream():
+async def task_stream(request: Request):
     """
     SSE 任务状态流
     
@@ -502,6 +502,18 @@ async def task_stream():
     async def event_generator():
         task_queue = get_task_queue()
         event_queue: asyncio.Queue = asyncio.Queue()
+        portal_uid = optional_portal_user_id(request)
+
+        def _visible_to_current_portal(payload: Dict[str, Any]) -> bool:
+            owner = payload.get("_portal_user_id")
+            if portal_uid is None:
+                return True
+            return owner == portal_uid
+
+        def _public_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+            data = dict(payload)
+            data.pop("_portal_user_id", None)
+            return data
         
         # 发送连接成功事件
         yield _format_sse_event("connected", {"message": "Connected to task stream"})
@@ -509,7 +521,9 @@ async def task_stream():
         # 发送当前进行中的任务
         pending_tasks = task_queue.list_pending_tasks()
         for task in pending_tasks:
-            yield _format_sse_event("task_created", task.to_dict())
+            payload = task.to_event_dict()
+            if _visible_to_current_portal(payload):
+                yield _format_sse_event("task_created", _public_payload(payload))
         
         # 订阅任务事件
         task_queue.subscribe(event_queue)
@@ -519,7 +533,9 @@ async def task_stream():
                 try:
                     # 等待事件，超时发送心跳
                     event = await asyncio.wait_for(event_queue.get(), timeout=30)
-                    yield _format_sse_event(event["type"], event["data"])
+                    data = event["data"] if isinstance(event, dict) else {}
+                    if isinstance(data, dict) and _visible_to_current_portal(data):
+                        yield _format_sse_event(event["type"], _public_payload(data))
                 except asyncio.TimeoutError:
                     # 心跳
                     yield _format_sse_event("heartbeat", {

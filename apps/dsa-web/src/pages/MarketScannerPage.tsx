@@ -112,25 +112,35 @@ const MarketScannerPage: React.FC = () => {
     [batches, selectedBatchId]
   );
 
+  const resetBatchScopedUi = useCallback(() => {
+    setSortBy('sentiment_score');
+    setPage(1);
+    setResumeHint(null);
+    setNotifyHint(null);
+  }, []);
+
   const loadBatches = useCallback(async () => {
     setLoadError(null);
     try {
       const res = await marketScanApi.listBatches(40, batchDateFilter || null, scanKindTab);
       const list = res.items || [];
       setBatches(list);
-      setSelectedBatchId((prev) => {
-        if (list.length === 0) {
-          return null;
+      let nextSelectedBatchId: string | null = null;
+      if (list.length > 0) {
+        if (selectedBatchId && list.some((b) => b.batchRunId === selectedBatchId)) {
+          nextSelectedBatchId = selectedBatchId;
+        } else {
+          nextSelectedBatchId = list[0]?.batchRunId ?? null;
         }
-        if (prev && list.some((b) => b.batchRunId === prev)) {
-          return prev;
-        }
-        return list[0]?.batchRunId ?? null;
-      });
+      }
+      if (nextSelectedBatchId !== selectedBatchId) {
+        resetBatchScopedUi();
+      }
+      setSelectedBatchId(nextSelectedBatchId);
     } catch (e) {
       setLoadError(getParsedApiError(e));
     }
-  }, [batchDateFilter, scanKindTab]);
+  }, [batchDateFilter, scanKindTab, selectedBatchId, resetBatchScopedUi]);
 
   const loadItems = useCallback(async () => {
     if (!selectedBatchId) {
@@ -245,13 +255,6 @@ const MarketScannerPage: React.FC = () => {
     }
     void loadItems();
   }, [mainTab, loadItems]);
-
-  useEffect(() => {
-    setSortBy('sentiment_score');
-    setPage(1);
-    setResumeHint(null);
-    setNotifyHint(null);
-  }, [selectedBatchId]);
 
   const showVolCol = selectedBatch?.scanKind === 'volume';
 
@@ -374,8 +377,8 @@ const MarketScannerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
+                      resetBatchScopedUi();
                       setSelectedBatchId(b.batchRunId);
-                      setPage(1);
                     }}
                     className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition-all ${
                       selectedBatchId === b.batchRunId
