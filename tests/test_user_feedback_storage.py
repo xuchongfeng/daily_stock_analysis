@@ -20,7 +20,7 @@ class TestUserFeedbackStorage(unittest.TestCase):
             'hello feedback',
             contact='a@b.com',
             portal_user_id=None,
-            page_url='/user/today',
+            page_url='/today',
             user_agent='pytest',
         )
         self.assertGreater(rid, 0)

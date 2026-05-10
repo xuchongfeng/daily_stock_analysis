@@ -224,7 +224,7 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --market-scan volume    # A 股成交量 Top N 批量分析
   python main.py --top-movers            # 等价 --market-scan gainers
   python main.py --market-scan gainers --market-scan-date 2026-04-03
-  python main.py --serve-only --user-ui   # 启动 API 并尝试构建/挂载 C 端（static-user）
+  python main.py --serve-only --user-ui   # 启动 API 并尝试构建/挂载 C 端（static-user/ → 根路径 /）
         '''
     )
 

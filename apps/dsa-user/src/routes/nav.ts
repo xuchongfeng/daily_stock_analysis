@@ -1,4 +1,4 @@
-/** 主导航（登录后可见），路径为 basename 下的绝对段 */
+/** 主导航（登录后可见），站点根路径下的绝对段 */
 export const MAIN_NAV = [
   { to: '/today', label: '今日' },
   { to: '/watchlist', label: '自选' },

@@ -140,7 +140,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/user">
+    <BrowserRouter>
       <AuthProvider>
         <RouteSync />
         <AppRoutes />

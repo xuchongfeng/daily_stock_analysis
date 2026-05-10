@@ -7,7 +7,7 @@ import { defineConfig } from 'vite';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  base: '/user/',
+  base: '/',
   plugins: [react()],
   server: {
     host: '0.0.0.0',

@@ -53,8 +53,8 @@ def create_app(
     创建并配置 FastAPI 应用实例
 
     Args:
-        static_dir: 管理端 Web 静态目录（默认项目根下 static/）
-        user_static_dir: C 端使用者站点静态目录（默认项目根下 static-user/）
+        static_dir: 管理端 Web 静态目录（默认项目根下 static/），站点路径前缀 ``/admin/``
+        user_static_dir: C 端使用者站点静态目录（默认项目根下 static-user/），站点根路径 ``/``
 
     Returns:
         配置完成的 FastAPI 应用实例
@@ -129,16 +129,16 @@ def create_app(
     has_admin = static_dir.exists() and (static_dir / "index.html").exists()
     has_user = user_static_dir.exists() and (user_static_dir / "index.html").exists()
 
-    if has_admin:
+    if has_user:
         @app.get("/", include_in_schema=False)
         async def root():
-            """根路由 - 返回管理端 Web 页面"""
-            return FileResponse(static_dir / "index.html")
-    elif has_user:
+            """根路由 - C 端使用者站点"""
+            return FileResponse(user_static_dir / "index.html")
+    elif has_admin:
         @app.get("/", include_in_schema=False)
         async def root():
-            """根路由 - 仅构建 C 端时重定向到使用者站点"""
-            return RedirectResponse(url="/user/", status_code=307)
+            """根路由 - 仅构建管理端时进入 /admin/"""
+            return RedirectResponse(url="/admin/", status_code=307)
     else:
         _FRONTEND_NOT_BUILT_HTML = """<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -164,7 +164,7 @@ def create_app(
 <p>Or the user site (outputs to <code>static-user/</code>):</p>
 <p><code>cd apps/dsa-user &amp;&amp; npm install &amp;&amp; npm run build</code></p>
 <p>Or start with auto-build:</p>
-<p><code>python main.py --serve-only</code>（管理端） / <code>python main.py --serve-only --user-ui</code>（含 C 端）</p>
+<p><code>python main.py --serve-only</code>（管理端 → <code>/admin/</code>） / <code>python main.py --serve-only --user-ui</code>（含 C 端根路径）</p>
 <div class="hint"><p>If you only need the API, visit <a href="/docs">/docs</a> for the interactive API documentation.</p></div>
 <p class="status">API Version 1.0.0 &bull; <a href="/api/health">/api/health</a></p>
 </div></body></html>"""
@@ -189,63 +189,75 @@ def create_app(
         )
     
     # ============================================================
-    # 静态文件托管（管理端 SPA + C 端 /user SPA）
+    # 静态文件托管（C 端根路径 + 管理端 /admin/）
     # ============================================================
 
     if has_user:
         user_assets_dir = user_static_dir / "assets"
         if user_assets_dir.exists():
-            app.mount("/user/assets", StaticFiles(directory=user_assets_dir), name="user_assets")
+            app.mount("/assets", StaticFiles(directory=user_assets_dir), name="user_assets")
 
     if has_admin:
-        assets_dir = static_dir / "assets"
-        if assets_dir.exists():
-            app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        admin_assets_dir = static_dir / "assets"
+        if admin_assets_dir.exists():
+            app.mount("/admin/assets", StaticFiles(directory=admin_assets_dir), name="admin_assets")
 
     if has_admin or has_user:
 
         @app.get("/{full_path:path}", include_in_schema=False)
         async def serve_spa(request: Request, full_path: str):
-            """SPA 路由回退：/user/* 为 C 端，其余在存在管理端产物时为管理端 SPA。"""
+            """SPA 回退：``/admin/*`` 管理端；其余在存在 C 端产物时为使用者站点。"""
             if full_path == "api" or full_path.startswith("api/"):
                 return JSONResponse(
                     status_code=404,
                     content={"error": "not_found", "message": f"API endpoint /{full_path} not found"},
                 )
 
+            # 旧版 C 端前缀 /user/ → 当前根路径（含 /user/assets/* → /assets/*）
             if full_path == "user" or full_path.startswith("user/"):
-                if not has_user:
+                suffix = full_path[5:] if full_path.startswith("user/") else ""
+                dest = f"/{suffix}" if suffix else "/"
+                return RedirectResponse(url=dest, status_code=308)
+
+            # 管理端 SPA：/admin/
+            if full_path == "admin" or full_path.startswith("admin/"):
+                if not has_admin:
                     return JSONResponse(
                         status_code=404,
-                        content={"error": "not_found", "message": "User UI not built (static-user/ missing)"},
+                        content={"error": "not_found", "message": "Admin UI not built (static/ missing)"},
                     )
-                rel = full_path[5:] if full_path.startswith("user/") else ""
+                rel = full_path[len("admin/") :] if full_path.startswith("admin/") else ""
                 if rel:
-                    file_path = user_static_dir / rel
-                    if file_path.exists() and file_path.is_file():
-                        content_type, _ = mimetypes.guess_type(str(file_path))
-                        return FileResponse(file_path, media_type=content_type)
-                return FileResponse(user_static_dir / "index.html")
+                    admin_file = static_dir / rel
+                    if admin_file.exists() and admin_file.is_file():
+                        content_type, _ = mimetypes.guess_type(str(admin_file))
+                        return FileResponse(admin_file, media_type=content_type)
+                return FileResponse(static_dir / "index.html")
 
-            if not has_admin and has_user:
-                # C 端独立部署时，股票自动补全索引放在 static-user 根目录
+            # C 端（站点根）
+            if has_user:
                 if full_path == "stocks.index.json":
                     user_index = user_static_dir / "stocks.index.json"
                     if user_index.is_file():
                         return FileResponse(user_index, media_type="application/json")
-                return JSONResponse(
-                    status_code=404,
-                    content={"error": "not_found", "message": f"Path /{full_path} not found"},
-                )
+                user_file = user_static_dir / full_path
+                if user_file.exists() and user_file.is_file():
+                    content_type, _ = mimetypes.guess_type(str(user_file))
+                    return FileResponse(user_file, media_type=content_type)
+                return FileResponse(user_static_dir / "index.html")
 
-            file_path = static_dir / full_path
-            if file_path.exists() and file_path.is_file():
-                # Issue #520: Explicitly resolve MIME type to avoid
-                # browsers rejecting JS modules served as text/plain.
-                content_type, _ = mimetypes.guess_type(str(file_path))
-                return FileResponse(file_path, media_type=content_type)
+            # 仅管理端：旧书签多在根路径，统一到 /admin/
+            if has_admin:
+                if full_path.startswith("assets/"):
+                    return RedirectResponse(url=f"/admin/{full_path}", status_code=308)
+                tail = full_path if full_path else ""
+                dest = f"/admin/{tail}" if tail else "/admin/"
+                return RedirectResponse(url=dest, status_code=307)
 
-            return FileResponse(static_dir / "index.html")
+            return JSONResponse(
+                status_code=404,
+                content={"error": "not_found", "message": f"Path /{full_path} not found"},
+            )
 
     return app
 

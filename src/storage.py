@@ -810,7 +810,7 @@ class LLMUsage(Base):
 
 
 class PortalUser(Base):
-    """C 端 /user 邮箱账号（独立于管理员单密码登录）."""
+    """C 端门户邮箱账号（独立于管理员单密码登录）."""
 
     __tablename__ = "portal_users"
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-C 端 (/user) 邮箱账号：注册、会话 cookie、独立于管理员密码与会话轮转。
+C 端门户邮箱账号：注册、会话 cookie、独立于管理员密码与会话轮转。
 
 会话密钥文件：DATA_DIR/.portal_session_secret（与管理员 .session_secret 分离）。
 """

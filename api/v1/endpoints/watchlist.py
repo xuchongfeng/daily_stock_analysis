@@ -2,7 +2,7 @@
 """
 User watchlist API.
 
-- 请求带有效 **门户** Cookie (`dsa_portal_session`)：读写对应 `portal_users.watchlist_json`（C 端 /user 每用户自选）。
+- 请求带有效 **门户** Cookie (`dsa_portal_session`)：读写对应 `portal_users.watchlist_json`（C 端门户每用户自选）。
 - 否则：沿用全局 JSON 文件（`WATCHLIST_FILE` / CLI ``--my-watchlist``），供管理员工作台与单机工具。
 """
 

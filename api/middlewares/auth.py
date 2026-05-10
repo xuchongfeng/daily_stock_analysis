@@ -80,7 +80,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 def add_auth_middleware(app):
     """Add auth middleware to protect API routes.
 
-    Portal (C /user) cookies never open API protection by themselves:
+    Portal (C-end) cookies never open API protection by themselves:
     ADMIN_AUTH_ENABLED gates /api/v1/*; portal or admin cookie may satisfy it.
     """
     app.add_middleware(AuthMiddleware)

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""门户登录用户的账户资料、通知偏好、密码与用量（C 端 /user/account）。"""
+"""门户登录用户的账户资料、通知偏好、密码与用量（C 端站点根路径 /account）。"""
 
 from __future__ import annotations
 

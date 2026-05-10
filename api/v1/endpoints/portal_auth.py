@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""C /user 邮箱注册与登录（独立于管理员认证）."""
+"""C 端门户邮箱注册与登录（独立于管理员认证）."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ class PortalLoginRequest(BaseModel):
 @router.post(
     "/register",
     summary="Register portal user",
-    description="Create email/password account for /user SPA and issue session cookie.",
+    description="Create email/password account for the portal SPA and issue session cookie.",
 )
 async def portal_register(request: Request, body: PortalRegisterRequest, db: Session = Depends(get_db)):
     uname, uname_err = _normalize_portal_username(body.username)
