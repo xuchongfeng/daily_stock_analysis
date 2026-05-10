@@ -10,9 +10,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, date
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 
-from api.deps import get_database_manager
+from api.deps import get_database_manager, require_admin_session
 from api.v1.schemas.common import ErrorResponse
 from api.v1.schemas.signal_digest import (
     PortfolioSelectionResponse,
@@ -30,6 +30,7 @@ from src.services.signal_digest_service import (
     build_signal_digest,
     compute_signal_digest_cache_key,
 )
+from src.services.signal_digest_notify import send_signal_digest_refresh_notification
 from src.services.backtest_service import BacktestService
 from src.storage import DatabaseManager
 
@@ -143,7 +144,19 @@ def _submit_signal_digest_task(*, task_args: Dict[str, Any]) -> str:
             rec["status"] = "running"
             rec["started_at"] = datetime.now().isoformat()
         try:
-            payload = _compute_signal_digest_payload(**task_args)
+            args = dict(task_args)
+            notify_after = bool(args.pop("notify_after", False))
+            payload = _compute_signal_digest_payload(**args)
+            if notify_after and not payload.get("from_cache"):
+                try:
+                    payload["notification_sent"] = bool(
+                        send_signal_digest_refresh_notification(payload)
+                    )
+                except Exception as notify_exc:
+                    logger.warning("signal_digest async notify failed: %s", notify_exc)
+                    payload["notification_sent"] = False
+            else:
+                payload["notification_sent"] = False
             with _SIGNAL_DIGEST_TASKS_LOCK:
                 rec = _SIGNAL_DIGEST_TASKS[task_id]
                 rec["status"] = "succeeded"
@@ -307,6 +320,7 @@ def get_portfolio_selection(
     ),
 )
 def get_signal_digest(
+    http_request: Request,
     trading_sessions: int = Query(
         14,
         ge=3,
@@ -348,6 +362,13 @@ def get_signal_digest(
         False,
         description="false=异步提交并立即返回任务状态；true=同步等待并返回结果",
     ),
+    notify_after: bool = Query(
+        False,
+        description=(
+            "为 true 时在本次重算完成且未命中缓存后，向已配置渠道发送信号摘要简报；"
+            "需管理员会话（ADMIN_AUTH_ENABLED 开启时）。"
+        ),
+    ),
     db_manager: DatabaseManager = Depends(get_database_manager),
 ) -> SignalDigestResponse | SignalDigestTaskAcceptedResponse:
     if exclude_batch and batch_only:
@@ -355,6 +376,8 @@ def get_signal_digest(
             status_code=422,
             detail="exclude_batch 与 batch_only 不能同时为 true",
         )
+    if notify_after:
+        require_admin_session(http_request)
     task_args = {
         "db_manager": db_manager,
         "trading_sessions": trading_sessions,
@@ -370,6 +393,16 @@ def get_signal_digest(
     if wait:
         try:
             merged = _compute_signal_digest_payload(**task_args)
+            if notify_after and not merged.get("from_cache"):
+                try:
+                    merged["notification_sent"] = bool(
+                        send_signal_digest_refresh_notification(merged)
+                    )
+                except Exception as notify_exc:
+                    logger.warning("signal_digest sync notify failed: %s", notify_exc)
+                    merged["notification_sent"] = False
+            else:
+                merged["notification_sent"] = False
             return SignalDigestResponse.model_validate(merged)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -377,7 +410,8 @@ def get_signal_digest(
             logger.exception("signal_digest failed: %s", exc)
             raise HTTPException(status_code=500, detail="signal_digest_failed") from exc
 
-    task_id = _submit_signal_digest_task(task_args=task_args)
+    task_args_async = {**task_args, "notify_after": notify_after}
+    task_id = _submit_signal_digest_task(task_args=task_args_async)
     with _SIGNAL_DIGEST_TASKS_LOCK:
         rec = dict(_SIGNAL_DIGEST_TASKS[task_id])
     return SignalDigestTaskAcceptedResponse(

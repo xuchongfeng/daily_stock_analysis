@@ -285,6 +285,25 @@ class AnalysisTaskQueue:
         with self._data_lock:
             return self._analyzing_stocks.get(dedupe_key)
 
+    def count_distinct_new_queue_slots(self, stock_codes: List[str]) -> int:
+        """
+        若立即提交这些标的，会新增几条队列任务（已在队列中的标的、重复代码不计）。
+        供门户月度 AI 配额预检与 ``/analyze`` 对齐。
+        """
+        seen: set[str] = set()
+        n = 0
+        for raw in stock_codes:
+            canon = canonical_stock_code(normalize_stock_code(raw))
+            if not canon:
+                continue
+            key = _dedupe_stock_code_key(canon)
+            if key in seen:
+                continue
+            seen.add(key)
+            if self.get_analyzing_task_id(canon) is None:
+                n += 1
+        return n
+
     def validate_selection_source(self, selection_source: Optional[str]) -> None:
         """
         Validate the selection source parameter.

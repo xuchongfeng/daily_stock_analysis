@@ -21,6 +21,8 @@ export type SignalDigestQuery = {
   useCache?: boolean;
   refresh?: boolean;
   wait?: boolean;
+  /** 重算完成且非缓存命中后发送推送（需管理员登录；钉钉/飞书等见系统设置） */
+  notifyAfter?: boolean;
 };
 
 const POLL_INTERVAL_MS = 1200;
@@ -39,6 +41,7 @@ export const signalDigestApi = {
       useCache = true,
       refresh = false,
       wait = false,
+      notifyAfter = false,
     } = params;
     const response = await apiClient.get<Record<string, unknown>>(BASE, {
       params: {
@@ -52,6 +55,7 @@ export const signalDigestApi = {
         use_cache: useCache,
         refresh,
         wait,
+        ...(notifyAfter ? { notify_after: true } : {}),
       },
     });
     const first = toCamelCase<SignalDigestResponse & SignalDigestTaskAcceptedResponse>(response.data);

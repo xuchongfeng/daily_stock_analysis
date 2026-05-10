@@ -48,6 +48,8 @@ export type SignalDigestResponse = {
   narrativeGenerated: boolean;
   fromCache?: boolean;
   cacheExpiresAt?: string | null;
+  /** 本次是否在重算后尝试发送了推送（仅勾选订阅且强制刷新且未读历史快照时由服务端返回） */
+  notificationSent?: boolean;
 };
 
 export type SignalDigestSnapshotDatesResponse = {

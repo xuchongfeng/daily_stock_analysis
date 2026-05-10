@@ -81,7 +81,8 @@ class AnalysisService:
             # 获取配置
             config = get_config()
             ttl = float(getattr(config, "analysis_reuse_ttl_hours", 3.0) or 0.0)
-            if not force_refresh and ttl > 0:
+            # 请求推送时不走近窗复用：复用路径不会触发流水线内的单股推送，避免勾选「推送通知」却无 DingTalk/飞书等消息。
+            if not force_refresh and ttl > 0 and not send_notification:
                 reuse_fn = getattr(self.repo, "get_latest_reusable_analysis", None)
                 recent = (
                     reuse_fn(stock_code, within_hours=ttl)

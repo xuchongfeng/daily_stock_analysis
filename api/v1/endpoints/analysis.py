@@ -25,8 +25,9 @@ from typing import Optional, Union, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from sqlalchemy.orm import Session
 
-from api.deps import get_config_dep, optional_portal_user_id
+from api.deps import get_config_dep, get_db, optional_portal_user_id
 from api.v1.schemas.analysis import (
     AnalyzeRequest,
     AnalysisResultResponse,
@@ -57,6 +58,7 @@ from src.services.task_queue import (
     DuplicateTaskError,
     TaskStatus as TaskStatusEnum,
 )
+from src.portal_usage import ensure_portal_monthly_ai_quota_or_raise
 from src.utils.data_processing import (
     normalize_model_used,
     parse_json_field,
@@ -133,6 +135,7 @@ def _resolve_and_normalize_input(raw_value: str) -> str:
             "model": Union[TaskAccepted, BatchTaskAcceptedResponse],
         },
         400: {"description": "请求参数错误", "model": ErrorResponse},
+        403: {"description": "门户套餐月度 AI 分析次数不足"},
         409: {"description": "股票正在分析中，拒绝重复提交", "model": DuplicateTaskErrorResponse},
         500: {"description": "分析失败", "model": ErrorResponse},
     },
@@ -142,7 +145,8 @@ def _resolve_and_normalize_input(raw_value: str) -> str:
 def trigger_analysis(
         request: AnalyzeRequest,
         http_request: Request,
-        config: Config = Depends(get_config_dep)
+        config: Config = Depends(get_config_dep),
+        db: Session = Depends(get_db),
 ) -> Union[AnalysisResultResponse, JSONResponse]:
     """
     触发股票分析
@@ -221,6 +225,8 @@ def trigger_analysis(
                 "message": "股票代码不能为空或仅包含空白字符"
             }
         )
+
+    ensure_portal_monthly_ai_quota_or_raise(db, portal_uid, stock_codes)
 
     # Sync mode only supports single-stock analysis.
     if not request.async_mode:

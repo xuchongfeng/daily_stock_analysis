@@ -267,6 +267,16 @@ function DigestContentRow({ step, title, children }: { step: 1 | 2 | 3 | 4; titl
   );
 }
 
+const SIGNAL_DIGEST_NOTIFY_PREF_KEY = 'dsa_signal_digest_notify_after_refresh';
+
+function readSignalDigestNotifyPref(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(SIGNAL_DIGEST_NOTIFY_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 const SignalDigestPage: React.FC = () => {
   const [data, setData] = useState<SignalDigestResponse | null>(null);
   const [loadError, setLoadError] = useState<ParsedApiError | null>(null);
@@ -279,10 +289,13 @@ const SignalDigestPage: React.FC = () => {
   const [withNarrative, setWithNarrative] = useState(true);
   const [snapshotDate, setSnapshotDate] = useState('');
   const [snapshotDates, setSnapshotDates] = useState<string[]>([]);
+  const [notifyAfterRefresh, setNotifyAfterRefresh] = useState(readSignalDigestNotifyPref);
+  const [pushNotice, setPushNotice] = useState<string | null>(null);
 
   const load = useCallback(async (opts?: { refresh?: boolean }) => {
     setLoading(true);
     setLoadError(null);
+    setPushNotice(null);
     try {
       const commonParams = {
         tradingSessions,
@@ -292,20 +305,32 @@ const SignalDigestPage: React.FC = () => {
         excludeBatch: recordScope === 'manual',
         adviceFilter,
       };
+      const wantNotify =
+        opts?.refresh === true && !snapshotDate && notifyAfterRefresh;
       const res = snapshotDate
         ? await signalDigestApi.getSnapshot(snapshotDate, commonParams)
         : await signalDigestApi.get({
             ...commonParams,
             withNarrative,
             refresh: opts?.refresh === true,
+            notifyAfter: wantNotify,
           });
       setData(res);
+      if (wantNotify) {
+        if (res.notificationSent) {
+          setPushNotice('已向已配置的钉钉/飞书/Webhook 等渠道发送本页信号摘要简报。');
+        } else if (res.fromCache) {
+          setPushNotice('本次仍命中服务端缓存，未触发推送；可稍后重试「刷新」或检查 SIGNAL_DIGEST_CACHE_TTL_SECONDS。');
+        } else {
+          setPushNotice('未检测到可用通知渠道或推送失败，请在「设置 → 通知渠道」配置 Webhook 并查看服务端日志。');
+        }
+      }
     } catch (e) {
       setLoadError(getParsedApiError(e));
     } finally {
       setLoading(false);
     }
-  }, [tradingSessions, topK, market, recordScope, adviceFilter, withNarrative, snapshotDate]);
+  }, [tradingSessions, topK, market, recordScope, adviceFilter, withNarrative, snapshotDate, notifyAfterRefresh]);
 
   useEffect(() => {
     document.title = '信号摘要 - DSA';
@@ -370,7 +395,25 @@ const SignalDigestPage: React.FC = () => {
             <strong className="font-medium text-foreground"> 买入/持有</strong> 类标的。可切换数据源与是否生成 AI 解读。
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/50 bg-background/60 px-3 py-2 text-xs text-secondary-text select-none hover:border-border hover:text-foreground">
+            <input
+              type="checkbox"
+              checked={notifyAfterRefresh}
+              disabled={Boolean(snapshotDate)}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setNotifyAfterRefresh(on);
+                try {
+                  localStorage.setItem(SIGNAL_DIGEST_NOTIFY_PREF_KEY, on ? '1' : '0');
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+            />
+            刷新后推送通知
+          </label>
           <Button
             type="button"
             variant="secondary"
@@ -383,6 +426,15 @@ const SignalDigestPage: React.FC = () => {
           </Button>
         </div>
       </header>
+
+      {pushNotice ? (
+        <InlineAlert
+          variant="info"
+          title="订阅通知"
+          message={pushNotice}
+          className="rounded-xl border border-border/60 px-3 py-2 text-xs shadow-none"
+        />
+      ) : null}
 
       <Card variant="bordered" padding="none" className="overflow-hidden border-border/50 shadow-sm">
         <div className="flex items-center gap-2 border-b border-border/40 bg-hover/20 px-4 py-2.5">

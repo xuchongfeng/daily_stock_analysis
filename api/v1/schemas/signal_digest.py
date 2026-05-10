@@ -80,6 +80,10 @@ class SignalDigestResponse(BaseModel):
         None,
         description="缓存失效时间 ISO8601；未启用缓存或强制刷新后首次写入前可能为空",
     )
+    notification_sent: bool = Field(
+        False,
+        description="本次响应是否在重算完成后尝试发送了多渠道推送（仅 notify_after=true 且未命中缓存时可能为 true）",
+    )
 
 
 class SignalDigestTaskAcceptedResponse(BaseModel):

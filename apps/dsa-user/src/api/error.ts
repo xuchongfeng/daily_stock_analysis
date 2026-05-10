@@ -1,4 +1,5 @@
 export type ApiErrorCategory =
+  | 'portal_ai_quota_exceeded'
   | 'agent_disabled'
   | 'missing_params'
   | 'llm_not_configured'
@@ -338,6 +339,16 @@ export function parseApiError(error: unknown): ParsedApiError {
       rawMessage,
       status,
       category: 'portfolio_busy',
+    });
+  }
+
+  if (errorCode === 'portal_ai_quota_exceeded') {
+    return createParsedApiError({
+      title: '本月 AI 分析次数已达上限',
+      message: payloadText ?? '当前套餐的本月分析额度不足，可在门户「我的套餐」查看用量或升级套餐。',
+      rawMessage,
+      status,
+      category: 'portal_ai_quota_exceeded',
     });
   }
 

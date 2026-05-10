@@ -12,12 +12,12 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.deps import get_db, require_portal_user_id
 from src.portal_auth import hash_plain_password, verify_portal_password
 from src.portal_plans import limits_for_tier, normalize_plan_tier, validate_plan_upgrade_target
+from src.portal_usage import count_portal_analysis_month
 from src.repositories.portal_users_repo import (
     get_portal_user_by_id,
     insert_portal_plan_upgrade_request,
@@ -26,7 +26,7 @@ from src.repositories.portal_users_repo import (
     update_portal_usage_stats,
     update_portal_user_profile_fields,
 )
-from src.storage import AnalysisHistory, PortalUser
+from src.storage import PortalUser
 
 logger = logging.getLogger(__name__)
 
@@ -36,16 +36,6 @@ router = APIRouter(tags=["PortalAccount"])
 def _current_calendar_month_key() -> str:
     now = datetime.now()
     return f"{now.year:04d}-{now.month:02d}"
-
-
-def _month_bounds_local():
-    now = datetime.now()
-    start = datetime(now.year, now.month, 1)
-    if now.month == 12:
-        end = datetime(now.year + 1, 1, 1)
-    else:
-        end = datetime(now.year, now.month + 1, 1)
-    return start, end
 
 
 def _default_notification_prefs() -> Dict[str, Any]:
@@ -111,20 +101,6 @@ def _normalize_username(raw: str) -> tuple[Optional[str], Optional[str]]:
     return s, None
 
 
-def _count_portal_analysis_month(session: Session, portal_user_id: int) -> int:
-    start, end = _month_bounds_local()
-    q = (
-        select(func.count())
-        .select_from(AnalysisHistory)
-        .where(
-            AnalysisHistory.portal_user_id == portal_user_id,
-            AnalysisHistory.created_at >= start,
-            AnalysisHistory.created_at < end,
-        )
-    )
-    return int(session.scalar(q) or 0)
-
-
 def _portal_row(session: Session, uid: int) -> Optional[PortalUser]:
     return get_portal_user_by_id(session, uid)
 
@@ -134,7 +110,7 @@ def _account_payload(session: Session, row: PortalUser) -> Dict[str, Any]:
     limits = limits_for_tier(tier)
     prefs = _parse_notification_prefs(getattr(row, "notification_prefs_json", None))
     usage = _parse_usage_stats(getattr(row, "usage_stats_json", None))
-    analysis_used = _count_portal_analysis_month(session, row.id)
+    analysis_used = count_portal_analysis_month(session, row.id)
     month_key = _current_calendar_month_key()
     return {
         "email": row.email,

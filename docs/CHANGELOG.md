@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] 门户套餐「每月 AI 分析次数」对 ``POST /api/v1/analysis/analyze`` 生效：携带门户会话且额度不足时返回 HTTP 403（``portal_ai_quota_exceeded``）；已在分析队列中的标的本次不计入预扣；管理端无门户会话时不拦截。Web/C 端错误解析展示「本月 AI 分析次数已达上限」类提示。
+- [修复] 分析工作台勾选「推送通知」却无 DingTalk/飞书等消息：近窗复用 ``analysis_history`` 时直接返回结果未走流水线推送；改为 **仅在不发送通知时** 才允许复用（``notify=false`` / ``send_notification=false`` 仍可复用以省额度；默认 ``notify=true`` 的 API 调用亦不再复用）。
+- [新功能] 信号摘要（今日）页：可选「刷新后推送通知」（偏好存 ``localStorage``）；服务端 ``notify_after=true``（需管理员会话）且在 **未命中缓存的重算完成** 后向已配置渠道发送简报；响应字段 ``notification_sent``。
 - [改进] 管理端侧栏：「运营指标」入口移至「用户反馈」与「设置」之间。
 - [修复] 运营指标按日序列图表恒为 0（汇总正常）：合并 ``GROUP BY`` 日期键时正确处理 ``datetime``（先于 ``date`` 取 ``.date().isoformat()``）；查询改为与当日汇总一致的 ``created_at`` 半开区间过滤，并用 ``func.date`` 分组，避免 SQLite 下 ``CAST(created_at AS DATE)`` 与绑定日期比较异常导致按日聚合为空。
 - [改进] 管理端「用户反馈」列表展示门户用户 **注册邮箱**（``LEFT JOIN portal_users``）；接口字段 ``portal_email``。
