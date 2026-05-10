@@ -79,3 +79,5 @@ static/
 static-user/
 /apps/dsa-desktop/dist/
 /apps/dsa-desktop/node_modules/
+/apps/dsa-web/node_modules/
+/apps/dsa-user/node_modules/
