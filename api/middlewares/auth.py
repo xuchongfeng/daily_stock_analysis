@@ -25,6 +25,7 @@ EXEMPT_PATHS = frozenset({
     "/api/v1/auth/portal/logout",
     "/api/v1/public/demo-analysis-samples",
     "/api/v1/public/feedback",
+    "/api/v1/public/analytics/page-view",
     "/api/health",
     "/health",
     "/docs",

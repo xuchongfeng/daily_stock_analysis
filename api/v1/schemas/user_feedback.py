@@ -21,6 +21,7 @@ class UserFeedbackItem(BaseModel):
     message: str
     contact: Optional[str] = None
     portal_user_id: Optional[int] = None
+    portal_email: Optional[str] = Field(None, description="门户账号邮箱（提交时已登录门户时有值）")
     page_url: Optional[str] = None
     user_agent: Optional[str] = None
     created_at: str

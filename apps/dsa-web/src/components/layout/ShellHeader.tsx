@@ -15,6 +15,7 @@ const TITLES: Record<string, { title: string; description: string }> = {
   '/backtest': { title: '回测', description: '回测任务与结果浏览' },
   '/settings': { title: '设置', description: '系统配置、模型与认证管理' },
   '/user-feedback': { title: '用户反馈', description: 'C 端站点意见反馈提交记录' },
+  '/business-metrics': { title: '运营指标', description: '当日卡片与按日趋势（PV/UV、注册、问股等）' },
 };
 
 export const ShellHeader: React.FC<ShellHeaderProps> = ({

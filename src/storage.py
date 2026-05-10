@@ -43,6 +43,7 @@ from sqlalchemy import (
     desc,
     asc,
     case,
+    cast,
     event,
     func,
     text,
@@ -791,6 +792,20 @@ class ConversationMessage(Base):
     role = Column(String(20), nullable=False)  # user, assistant, system
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now, index=True)
+
+
+class PageViewEvent(Base):
+    """前端上报的页面浏览（用于估算 PV/UV；依赖 Cookie ``dsa_visitor_id``）。"""
+
+    __tablename__ = "page_view_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    visitor_id = Column(String(64), nullable=False, index=True)
+    path = Column(String(512), nullable=False)
+    surface = Column(String(16), nullable=False, default="unknown")
+    created_at = Column(DateTime, default=datetime.now, nullable=False, index=True)
+
+    __table_args__ = (Index("ix_page_view_created_visitor", "created_at", "visitor_id"),)
 
 
 class LLMUsage(Base):
@@ -2539,25 +2554,258 @@ class DatabaseManager:
 
         return self._run_write_transaction("insert_user_feedback", _write)
 
+    def insert_page_view(self, visitor_id: str, path: str, surface: str = "unknown") -> None:
+        """写入一条页面浏览事件（供公开埋点接口调用）。"""
+        vid = (visitor_id or "").strip()[:64]
+        if not vid:
+            raise ValueError("visitor_id is required")
+        p = (path or "").strip()[:512] or "/"
+        surf = (surface or "unknown").strip().lower()[:16] or "unknown"
+        if surf not in ("admin", "portal", "unknown"):
+            surf = "unknown"
+
+        def _write(session: Session) -> None:
+            session.add(PageViewEvent(visitor_id=vid, path=p, surface=surf))
+
+        self._run_write_transaction("insert_page_view", _write)
+
+    def get_business_metrics_snapshot(self, day: Optional[date] = None) -> Dict[str, Any]:
+        """
+        按服务器本地日历日聚合运营向指标（管理端展示用）。
+
+        PV/UV 依赖前端上报 ``page_view_events``；其它来自既有业务表。
+        """
+        d = day or date.today()
+        start = datetime(d.year, d.month, d.day)
+        end = start + timedelta(days=1)
+        with self.get_session() as session:
+            pv = (
+                session.execute(
+                    select(func.count(PageViewEvent.id)).where(
+                        PageViewEvent.created_at >= start,
+                        PageViewEvent.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            uv = (
+                session.execute(
+                    select(func.count(func.distinct(PageViewEvent.visitor_id))).where(
+                        PageViewEvent.created_at >= start,
+                        PageViewEvent.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            reg = (
+                session.execute(
+                    select(func.count(PortalUser.id)).where(
+                        PortalUser.created_at >= start,
+                        PortalUser.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+            portal_total = session.execute(select(func.count(PortalUser.id))).scalar() or 0
+            chat_user = (
+                session.execute(
+                    select(func.count(ConversationMessage.id)).where(
+                        ConversationMessage.created_at >= start,
+                        ConversationMessage.created_at < end,
+                        ConversationMessage.role == "user",
+                    )
+                ).scalar()
+                or 0
+            )
+            portal_analysis = (
+                session.execute(
+                    select(func.count(AnalysisHistory.id)).where(
+                        AnalysisHistory.created_at >= start,
+                        AnalysisHistory.created_at < end,
+                        AnalysisHistory.portal_user_id.isnot(None),
+                    )
+                ).scalar()
+                or 0
+            )
+            feedback_today = (
+                session.execute(
+                    select(func.count(UserFeedback.id)).where(
+                        UserFeedback.created_at >= start,
+                        UserFeedback.created_at < end,
+                    )
+                ).scalar()
+                or 0
+            )
+        return {
+            "calendar_date": d.isoformat(),
+            "page_views_today": int(pv),
+            "unique_visitors_today": int(uv),
+            "portal_registrations_today": int(reg),
+            "portal_users_total": int(portal_total),
+            "agent_chat_user_messages_today": int(chat_user),
+            "portal_analysis_records_today": int(portal_analysis),
+            "user_feedback_submissions_today": int(feedback_today),
+        }
+
+    def get_business_metrics_daily_series(
+        self,
+        *,
+        end_day: Optional[date] = None,
+        days: int = 30,
+    ) -> Dict[str, Any]:
+        """
+        按服务器本地日历日返回运营指标时间序列（首尾共 ``days`` 天，缺日补 0）。
+
+        口径与 ``get_business_metrics_snapshot`` 一致；按 ``created_at`` 落在当日的记录聚合。
+        """
+        span = max(1, min(int(days or 30), 90))
+        end = end_day or date.today()
+        start = end - timedelta(days=span - 1)
+
+        def _day_key(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            # datetime 是 date 的子类：必须先处理 datetime，否则 isoformat() 含「T」与时间，
+            # 无法与 skeleton 的 calendar_date（纯 YYYY-MM-DD）对齐，导致按日聚合全部丢失。
+            if isinstance(value, datetime):
+                return value.date().isoformat()
+            if isinstance(value, date):
+                return value.isoformat()
+            s = str(value).strip()
+            return s[:10] if len(s) >= 10 else None
+
+        skeleton: Dict[str, Dict[str, Any]] = {}
+        cur = start
+        while cur <= end:
+            k = cur.isoformat()
+            skeleton[k] = {
+                "calendar_date": k,
+                "page_views": 0,
+                "unique_visitors": 0,
+                "portal_registrations": 0,
+                "agent_chat_user_messages": 0,
+                "portal_analysis_records": 0,
+                "user_feedback_submissions": 0,
+            }
+            cur += timedelta(days=1)
+
+        def _apply_counts(
+            rows: List[Any],
+            field: str,
+        ) -> None:
+            for row in rows:
+                day_val, cnt = row[0], row[1]
+                dk = _day_key(day_val)
+                if dk and dk in skeleton:
+                    skeleton[dk][field] = int(cnt or 0)
+
+        # 与当日汇总一致：用 ``created_at`` 的半开区间 [range_start, range_end_excl) 过滤，
+        # 避免 SQLite 等对 ``CAST(created_at AS DATE)`` 与 Python date 比较结果异常导致按日查询恒为空。
+        range_start = datetime.combine(start, datetime.min.time())
+        range_end_excl = datetime.combine(end + timedelta(days=1), datetime.min.time())
+
+        with self.get_session() as session:
+            pv_d = func.date(PageViewEvent.created_at)
+            pv_rows = session.execute(
+                select(pv_d, func.count(PageViewEvent.id))
+                .where(
+                    PageViewEvent.created_at >= range_start,
+                    PageViewEvent.created_at < range_end_excl,
+                )
+                .group_by(pv_d)
+            ).all()
+            _apply_counts(pv_rows, "page_views")
+
+            uv_rows = session.execute(
+                select(pv_d, func.count(func.distinct(PageViewEvent.visitor_id)))
+                .where(
+                    PageViewEvent.created_at >= range_start,
+                    PageViewEvent.created_at < range_end_excl,
+                )
+                .group_by(pv_d)
+            ).all()
+            _apply_counts(uv_rows, "unique_visitors")
+
+            pu_d = func.date(PortalUser.created_at)
+            reg_rows = session.execute(
+                select(pu_d, func.count(PortalUser.id))
+                .where(
+                    PortalUser.created_at >= range_start,
+                    PortalUser.created_at < range_end_excl,
+                )
+                .group_by(pu_d)
+            ).all()
+            _apply_counts(reg_rows, "portal_registrations")
+
+            cm_d = func.date(ConversationMessage.created_at)
+            chat_rows = session.execute(
+                select(cm_d, func.count(ConversationMessage.id))
+                .where(
+                    ConversationMessage.created_at >= range_start,
+                    ConversationMessage.created_at < range_end_excl,
+                    ConversationMessage.role == "user",
+                )
+                .group_by(cm_d)
+            ).all()
+            _apply_counts(chat_rows, "agent_chat_user_messages")
+
+            ah_d = func.date(AnalysisHistory.created_at)
+            ah_rows = session.execute(
+                select(ah_d, func.count(AnalysisHistory.id))
+                .where(
+                    AnalysisHistory.created_at >= range_start,
+                    AnalysisHistory.created_at < range_end_excl,
+                    AnalysisHistory.portal_user_id.isnot(None),
+                )
+                .group_by(ah_d)
+            ).all()
+            _apply_counts(ah_rows, "portal_analysis_records")
+
+            uf_d = func.date(UserFeedback.created_at)
+            fb_rows = session.execute(
+                select(uf_d, func.count(UserFeedback.id))
+                .where(
+                    UserFeedback.created_at >= range_start,
+                    UserFeedback.created_at < range_end_excl,
+                )
+                .group_by(uf_d)
+            ).all()
+            _apply_counts(fb_rows, "user_feedback_submissions")
+
+        ordered = [skeleton[k] for k in sorted(skeleton.keys())]
+        return {
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "days": span,
+            "series": ordered,
+        }
+
     def list_user_feedback_paginated(
         self,
         *,
         offset: int = 0,
         limit: int = 50,
-    ) -> Tuple[List[UserFeedback], int]:
-        """分页列出用户反馈（时间倒序）。"""
+    ) -> Tuple[List[Tuple[UserFeedback, Optional[str]]], int]:
+        """分页列出用户反馈（时间倒序）；附带门户用户邮箱（``LEFT JOIN portal_users``）。"""
         offset = max(0, int(offset))
         limit = max(1, min(int(limit or 50), 200))
 
         with self.get_session() as session:
             total = session.execute(select(func.count(UserFeedback.id))).scalar() or 0
-            rows = session.execute(
-                select(UserFeedback)
+            pairs = session.execute(
+                select(UserFeedback, PortalUser.email)
+                .outerjoin(PortalUser, UserFeedback.portal_user_id == PortalUser.id)
                 .order_by(desc(UserFeedback.created_at))
                 .offset(offset)
                 .limit(limit)
-            ).scalars().all()
-            return list(rows), int(total)
+            ).all()
+            out: List[Tuple[UserFeedback, Optional[str]]] = []
+            for row in pairs:
+                fb = row[0]
+                em = row[1]
+                em_str = (str(em).strip() if em is not None else "") or None
+                out.append((fb, em_str))
+            return out, int(total)
 
     def get_concept_board_highlights_by_codes(
         self,

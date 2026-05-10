@@ -14,10 +14,20 @@ import MarketScannerPage from './pages/MarketScannerPage';
 import WatchlistPage from './pages/WatchlistPage';
 import ConceptBoardsPage from './pages/ConceptBoardsPage';
 import PortfolioSelectionPage from './pages/PortfolioSelectionPage';
+import BusinessMetricsPage from './pages/BusinessMetricsPage';
 import { ApiErrorAlert, Shell } from './components/common';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useAgentChatStore } from './stores/agentChatStore';
+import { reportAdminPageView } from './utils/analytics';
 import './App.css';
+
+function AdminAnalyticsBeacon() {
+  const location = useLocation();
+  useEffect(() => {
+    void reportAdminPageView();
+  }, [location.pathname, location.search]);
+  return null;
+}
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -79,6 +89,7 @@ const AppContent: React.FC = () => {
         <Route path="/concept-boards" element={<ConceptBoardsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/user-feedback" element={<UserFeedbackPage />} />
+        <Route path="/business-metrics" element={<BusinessMetricsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
       <Route path="/login" element={<LoginPage />} />
@@ -90,6 +101,7 @@ const App: React.FC = () => {
   return (
     <Router basename="/admin">
       <AuthProvider>
+        <AdminAnalyticsBeacon />
         <AppContent />
       </AuthProvider>
     </Router>

@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] 管理端侧栏：「运营指标」入口移至「用户反馈」与「设置」之间。
+- [修复] 运营指标按日序列图表恒为 0（汇总正常）：合并 ``GROUP BY`` 日期键时正确处理 ``datetime``（先于 ``date`` 取 ``.date().isoformat()``）；查询改为与当日汇总一致的 ``created_at`` 半开区间过滤，并用 ``func.date`` 分组，避免 SQLite 下 ``CAST(created_at AS DATE)`` 与绑定日期比较异常导致按日聚合为空。
+- [改进] 管理端「用户反馈」列表展示门户用户 **注册邮箱**（``LEFT JOIN portal_users``）；接口字段 ``portal_email``。
+- [修复] 管理端「用户反馈」列表 API 路径缺少 ``/api/v1`` 前缀，同源部署时请求打到错误 URL 导致列表始终不可用；改为 ``GET /api/v1/system/user-feedback``。
+- [新功能] 管理端「运营指标」：``GET /api/v1/system/business-metrics/daily`` 按自然日序列（1–90 天）；页面增加 PV/UV 与业务指标双折线图及天数预设。
+- [修复] ``apps/dsa-web``：删除误加入的 ``darwin-arm64`` 专用 ``devDependencies``（esbuild/rollup/tailwind oxide/lightningcss），避免在 darwin x64 或 Rosetta 环境下 ``npm ci`` 报 ``EBADPLATFORM``；对应原生包改由 Vite/Rollup/Tailwind 等依赖的 optional 解析。
+- [新功能] 运营向指标：库表 ``page_view_events``；``POST /api/v1/public/analytics/page-view``（豁免门禁）与 Cookie ``dsa_visitor_id``；``GET /api/v1/system/business-metrics``；管理端「运营指标」页；双端 SPA 自动上报 PV；说明文档 ``docs/business-metrics.md``。
+- [修复] 管理端侧栏：桌面端导航项过多时底部入口（含「运营指标」）不可见；根因是 SidebarNav 使用 ``h-full`` 与 ``nav`` 的 ``flex-1``，滚动父级误认为内容高度已满而不产生纵向滚动；改为 ``aside`` 直接 ``overflow-y-auto``、SidebarNav 按内容自然增高可滚，并将展开宽度调至约 148px；「运营指标」仍在「信号摘要」下方。
 - [改进] 站点主图标：管理端与 C 端统一使用自定义 SVG（public ``favicon.svg``），替换默认 Vite 占位图标。
 - [改进] Web 托管路径调整：C 端使用者站点改为站点根路径 ``/``（静态资源 ``/assets/``），管理端 Web 改为 ``/admin/``（``/admin/assets/``）；旧链接 ``/user/...`` 永久重定向至对应根路径。
 - [新功能] C 端账户「我的套餐」：提交套餐升级意向（``POST /api/v1/auth/portal/account/plan-upgrade``），库表 ``portal_plan_upgrade_requests``；无在线支付，成功提示由客服跟进。

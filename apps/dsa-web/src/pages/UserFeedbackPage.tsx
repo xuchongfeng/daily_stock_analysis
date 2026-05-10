@@ -73,13 +73,14 @@ const UserFeedbackPage: React.FC = () => {
       ) : (
         <>
           <div className="overflow-x-auto rounded-2xl border border-border/70 bg-card/50 shadow-soft-card">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[880px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-base/50 text-xs font-semibold uppercase tracking-wide text-secondary-text">
                   <th className="px-3 py-2.5">时间</th>
                   <th className="px-3 py-2.5">内容</th>
                   <th className="px-3 py-2.5">联系方式</th>
-                  <th className="px-3 py-2.5">用户</th>
+                  <th className="px-3 py-2.5">用户 ID</th>
+                  <th className="px-3 py-2.5">注册邮箱</th>
                   <th className="px-3 py-2.5">页面</th>
                   <th className="px-3 py-2.5">UA</th>
                 </tr>
@@ -96,6 +97,9 @@ const UserFeedbackPage: React.FC = () => {
                     <td className="px-3 py-2.5 text-secondary-text">{row.contact || '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-xs mono text-secondary-text">
                       {row.portal_user_id != null ? `#${row.portal_user_id}` : '—'}
+                    </td>
+                    <td className="max-w-[200px] break-all px-3 py-2.5 text-xs text-secondary-text" title={row.portal_email || ''}>
+                      {row.portal_email?.trim() ? row.portal_email : '—'}
                     </td>
                     <td className="max-w-[180px] px-3 py-2.5 text-xs text-secondary-text">
                       <span className="break-all" title={row.page_url || ''}>

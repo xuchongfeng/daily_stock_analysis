@@ -56,9 +56,9 @@ export const Shell: React.FC<ShellProps> = ({ children }) => {
       <div className="mx-auto flex min-h-screen w-full max-w-[1920px] px-3 py-3 sm:px-4 sm:py-4 lg:px-5">
         <aside
           className={cn(
-            'sticky top-3 z-40 hidden shrink-0 overflow-visible rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-card/72 p-2 shadow-soft-card backdrop-blur-sm transition-[width] duration-200 lg:flex',
-            'max-h-[calc(100vh-1.5rem)] self-start sm:top-4 sm:max-h-[calc(100vh-2rem)]',
-            collapsed ? 'w-[64px]' : 'w-[128px]'
+            'sticky top-3 z-40 hidden shrink-0 flex-col rounded-[1.5rem] border border-[var(--shell-sidebar-border)] bg-card/72 p-2 shadow-soft-card backdrop-blur-sm transition-[width] duration-200 lg:flex',
+            'max-h-[calc(100vh-1.5rem)] self-start overflow-x-hidden overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch] sm:top-4 sm:max-h-[calc(100vh-2rem)]',
+            collapsed ? 'w-[64px]' : 'min-w-[132px] w-[148px]'
           )}
           aria-label="桌面侧边导航"
         >

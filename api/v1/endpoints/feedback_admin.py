@@ -38,15 +38,16 @@ def list_user_feedback(
         rows, total = db_manager.list_user_feedback_paginated(offset=offset, limit=limit)
         items = [
             UserFeedbackItem(
-                id=r.id,
-                message=r.message or "",
-                contact=r.contact,
-                portal_user_id=r.portal_user_id,
-                page_url=r.page_url,
-                user_agent=r.user_agent,
-                created_at=r.created_at.isoformat() if r.created_at else "",
+                id=fb.id,
+                message=fb.message or "",
+                contact=fb.contact,
+                portal_user_id=fb.portal_user_id,
+                portal_email=portal_email,
+                page_url=fb.page_url,
+                user_agent=fb.user_agent,
+                created_at=fb.created_at.isoformat() if fb.created_at else "",
             )
-            for r in rows
+            for fb, portal_email in rows
         ]
         return UserFeedbackListResponse(total=total, page=page, limit=limit, items=items)
     except Exception as e:

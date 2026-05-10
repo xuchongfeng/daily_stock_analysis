@@ -33,6 +33,7 @@ import { PerformancePage } from './pages/marketing/PerformancePage';
 import { PricingPage } from './pages/marketing/PricingPage';
 import { ReviewsPage } from './pages/marketing/ReviewsPage';
 import { StockDemoPage } from './pages/marketing/StockDemoPage';
+import { reportPortalPageView } from './utils/analytics';
 
 function Loading() {
   return <div className="loading-screen">加载中…</div>;
@@ -43,6 +44,14 @@ function RouteSync() {
   useEffect(() => {
     useAgentChatStore.getState().setCurrentRoute(location.pathname);
   }, [location.pathname]);
+  return null;
+}
+
+function PortalAnalyticsBeacon() {
+  const location = useLocation();
+  useEffect(() => {
+    void reportPortalPageView();
+  }, [location.pathname, location.search]);
   return null;
 }
 
@@ -142,6 +151,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <PortalAnalyticsBeacon />
         <RouteSync />
         <AppRoutes />
       </AuthProvider>

@@ -20,6 +20,8 @@ from api.v1.endpoints import (
     public_demo,
     feedback_public,
     feedback_admin,
+    analytics_public,
+    business_metrics,
     stocks,
     backtest,
     system_config,
@@ -77,6 +79,12 @@ router.include_router(
 )
 
 router.include_router(
+    analytics_public.router,
+    prefix="/public",
+    tags=["Analytics"],
+)
+
+router.include_router(
     feedback_admin.router,
     prefix="/system",
     tags=["UserFeedback"],
@@ -98,6 +106,12 @@ router.include_router(
     system_config.router,
     prefix="/system",
     tags=["SystemConfig"]
+)
+
+router.include_router(
+    business_metrics.router,
+    prefix="/system",
+    tags=["BusinessMetrics"],
 )
 
 router.include_router(

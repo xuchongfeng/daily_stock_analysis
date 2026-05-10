@@ -28,9 +28,11 @@ class TestUserFeedbackStorage(unittest.TestCase):
         rows, total = db.list_user_feedback_paginated(offset=0, limit=10)
         self.assertEqual(total, 1)
         self.assertEqual(len(rows), 1)
-        self.assertIsInstance(rows[0], UserFeedback)
-        self.assertEqual(rows[0].message, 'hello feedback')
-        self.assertEqual(rows[0].contact, 'a@b.com')
+        fb_row, portal_email = rows[0]
+        self.assertIsInstance(fb_row, UserFeedback)
+        self.assertIsNone(portal_email)
+        self.assertEqual(fb_row.message, 'hello feedback')
+        self.assertEqual(fb_row.contact, 'a@b.com')
 
 
 if __name__ == '__main__':
