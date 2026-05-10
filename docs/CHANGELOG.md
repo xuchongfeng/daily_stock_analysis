@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- 新条目格式：- [类型] 描述（类型取值：新功能/改进/修复/文档/测试/chore）-->
 <!-- 每条独立一行追加到本段末尾，无需分类标题，合并时冲突最小 -->
+- [改进] 站点主图标：管理端与 C 端统一使用自定义 SVG（public ``favicon.svg``），替换默认 Vite 占位图标。
 - [改进] Web 托管路径调整：C 端使用者站点改为站点根路径 ``/``（静态资源 ``/assets/``），管理端 Web 改为 ``/admin/``（``/admin/assets/``）；旧链接 ``/user/...`` 永久重定向至对应根路径。
 - [新功能] C 端账户「我的套餐」：提交套餐升级意向（``POST /api/v1/auth/portal/account/plan-upgrade``），库表 ``portal_plan_upgrade_requests``；无在线支付，成功提示由客服跟进。
 - [新功能] C 端使用者站点右下角「反馈」入口与弹窗，提交至 ``POST /api/v1/public/feedback``（门禁开启时豁免路径）；库表 ``user_feedback``；管理端 Web 侧栏「用户反馈」与 ``GET /api/v1/system/user-feedback``（需管理员会话）分页查看。
