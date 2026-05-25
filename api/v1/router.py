@@ -32,6 +32,7 @@ from api.v1.endpoints import (
     signal_digest,
     concept_board,
     discover_hot_event,
+    discover_industry_chain,
     watchlist,
 )
 
@@ -153,6 +154,12 @@ router.include_router(
     discover_hot_event.router,
     prefix="/discover/hot-events",
     tags=["DiscoverHotEvents"],
+)
+
+router.include_router(
+    discover_industry_chain.router,
+    prefix="/discover/industry-chains",
+    tags=["DiscoverIndustryChains"],
 )
 
 router.include_router(

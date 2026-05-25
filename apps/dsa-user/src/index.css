@@ -4878,6 +4878,328 @@ a.discover-hub-card:hover {
   margin: 0;
 }
 
+/* --- 核心产业链 --- */
+.discover-chain-page {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.discover-chain-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+
+.discover-chain-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.discover-chain-add-btn:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.discover-chain-add-btn-secondary {
+  background: #fff;
+  color: #2563eb;
+}
+
+.discover-chain-add-btn-secondary:hover {
+  background: #eff6ff;
+}
+
+.discover-chain-delete-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #dc2626;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.discover-chain-delete-btn:hover {
+  background: #fef2f2;
+}
+
+.discover-chain-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+@media (min-width: 720px) {
+  .discover-chain-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.discover-chain-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.85rem;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.discover-chain-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+}
+
+.discover-chain-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.discover-chain-stock-count {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.discover-chain-latest-preview {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #475569;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.discover-chain-latest-label {
+  display: inline-block;
+  margin-right: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.discover-chain-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.discover-chain-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.discover-chain-prose {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.discover-chain-news {
+  padding: 0.85rem 1rem;
+  border-radius: 0.65rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.discover-chain-stock-table-wrap {
+  overflow-x: auto;
+}
+
+.discover-chain-stock-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.discover-chain-stock-table th,
+.discover-chain-stock-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.discover-chain-stock-table th {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.discover-chain-form-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .discover-chain-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .discover-chain-field.wide {
+    grid-column: 1 / -1;
+  }
+}
+
+.discover-chain-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.discover-chain-input,
+.discover-chain-textarea {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.55rem;
+  font-size: 0.875rem;
+  background: #fff;
+}
+
+.discover-chain-textarea {
+  resize: vertical;
+  min-height: 4rem;
+}
+
+.discover-chain-stocks-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.discover-chain-stocks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.discover-chain-import-box {
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+}
+
+.discover-chain-import-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.9375rem;
+}
+
+.discover-chain-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.discover-chain-file-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 0.65rem;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.discover-chain-file-input {
+  display: none;
+}
+
+.discover-chain-import-hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.8125rem;
+  color: #059669;
+}
+
+.discover-chain-row-remove {
+  border: none;
+  background: none;
+  color: #dc2626;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.discover-chain-form-actions {
+  margin-top: 1.25rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.discover-chain-board-news {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.discover-chain-panel-intro {
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.discover-chain-panel-news {
+  line-height: 1.55;
+  color: #334155;
+}
+
+.discover-chain-role-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0369a1;
+  background: rgba(3, 105, 161, 0.1);
+  border: 1px solid rgba(3, 105, 161, 0.22);
+}
+
+.discover-chain-toolbar-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .discover-sector-page {
   max-width: 1120px;
   margin: 0 auto;

@@ -30,6 +30,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from api.v1 import api_v1_router
 from api.middlewares.auth import add_auth_middleware
 from api.middlewares.error_handler import add_error_handlers
+from api.static_serving import resolve_static_file
 from api.v1.schemas.common import HealthResponse
 from src.services.system_config_service import SystemConfigService
 
@@ -228,8 +229,8 @@ def create_app(
                     )
                 rel = full_path[len("admin/") :] if full_path.startswith("admin/") else ""
                 if rel:
-                    admin_file = static_dir / rel
-                    if admin_file.exists() and admin_file.is_file():
+                    admin_file = resolve_static_file(static_dir, rel)
+                    if admin_file is not None:
                         content_type, _ = mimetypes.guess_type(str(admin_file))
                         return FileResponse(admin_file, media_type=content_type)
                 return FileResponse(static_dir / "index.html")
@@ -240,8 +241,8 @@ def create_app(
                     user_index = user_static_dir / "stocks.index.json"
                     if user_index.is_file():
                         return FileResponse(user_index, media_type="application/json")
-                user_file = user_static_dir / full_path
-                if user_file.exists() and user_file.is_file():
+                user_file = resolve_static_file(user_static_dir, full_path)
+                if user_file is not None:
                     content_type, _ = mimetypes.guess_type(str(user_file))
                     return FileResponse(user_file, media_type=content_type)
                 return FileResponse(user_static_dir / "index.html")

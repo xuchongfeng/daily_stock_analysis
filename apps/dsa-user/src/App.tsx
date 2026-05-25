@@ -17,6 +17,9 @@ import { AccountPage } from './pages/AccountPage';
 import { ChatHubPage } from './pages/ChatHubPage';
 import { DiscoverPage } from './pages/DiscoverPage';
 import { DiscoverConceptBoardsPage } from './pages/DiscoverConceptBoardsPage';
+import { DiscoverIndustryChainDetailPage } from './pages/DiscoverIndustryChainDetailPage';
+import { DiscoverIndustryChainEditPage } from './pages/DiscoverIndustryChainEditPage';
+import { DiscoverIndustryChainsPage } from './pages/DiscoverIndustryChainsPage';
 import { DiscoverHotEventDetailPage } from './pages/DiscoverHotEventDetailPage';
 import { DiscoverHotEventsPage } from './pages/DiscoverHotEventsPage';
 import { PortfolioAccountDetailPage } from './pages/portfolio/PortfolioAccountDetailPage';
@@ -135,6 +138,10 @@ function AppRoutes() {
         <Route path="discover" element={<Outlet />}>
           <Route index element={<DiscoverPage />} />
           <Route path="sectors" element={<DiscoverConceptBoardsPage />} />
+          <Route path="chains/new" element={<DiscoverIndustryChainEditPage />} />
+          <Route path="chains/:slug/edit" element={<DiscoverIndustryChainEditPage />} />
+          <Route path="chains/:slug" element={<DiscoverIndustryChainDetailPage />} />
+          <Route path="chains" element={<DiscoverIndustryChainsPage />} />
           <Route path="events" element={<DiscoverHotEventsPage />} />
           <Route path="events/:slug" element={<DiscoverHotEventDetailPage />} />
         </Route>

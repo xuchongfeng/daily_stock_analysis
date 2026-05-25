@@ -398,6 +398,28 @@ class DiscoverHotEventTimeline(Base):
     )
 
 
+class DiscoverIndustryChain(Base):
+    """C 端「核心产业链」策展表（前端/API 写入，只读列表透出）。"""
+
+    __tablename__ = "discover_industry_chains"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    slug = Column(String(64), nullable=False, unique=True, index=True)
+    name = Column(String(256), nullable=False)
+    introduction = Column(Text)
+    latest_news = Column(Text)
+    core_stocks_json = Column(Text)
+    market = Column(String(16), nullable=False, default="cn", index=True)
+    status = Column(String(16), nullable=False, default="active", index=True)
+    sort_order = Column(Integer, nullable=False, default=0)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        Index("ix_discover_industry_chain_status_sort", "status", "sort_order", "updated_at"),
+    )
+
+
 class SignalDigestCache(Base):
     """
     信号摘要 API 响应缓存（SQLite）。
@@ -2514,6 +2536,191 @@ class DatabaseManager:
             return count
 
         return self._run_write_transaction("sync_discover_hot_events_from_seed", _write)
+
+    @staticmethod
+    def _discover_industry_chain_stocks(raw: Optional[str]) -> List[Dict[str, Any]]:
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return []
+        if not isinstance(data, list):
+            return []
+        out: List[Dict[str, Any]] = []
+        for idx, item in enumerate(data):
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("stock_code") or item.get("code") or "").strip()
+            if not code:
+                continue
+            name = str(item.get("stock_name") or item.get("name") or "").strip() or None
+            role = str(item.get("role") or "").strip() or None
+            try:
+                sort_order = int(item.get("sort_order", idx))
+            except (TypeError, ValueError):
+                sort_order = idx
+            out.append(
+                {
+                    "stock_code": code,
+                    "stock_name": name,
+                    "role": role,
+                    "sort_order": sort_order,
+                }
+            )
+        out.sort(key=lambda x: (x.get("sort_order", 0), x.get("stock_code") or ""))
+        return out
+
+    def _discover_industry_chain_summary_dict(self, row: "DiscoverIndustryChain") -> Dict[str, Any]:
+        stocks = self._discover_industry_chain_stocks(row.core_stocks_json)
+        return {
+            "slug": row.slug,
+            "name": row.name,
+            "introduction": (row.introduction or "").strip(),
+            "latest_news": (row.latest_news or "").strip(),
+            "market": row.market or "cn",
+            "status": row.status or "active",
+            "sort_order": int(row.sort_order or 0),
+            "core_stock_count": len(stocks),
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+    def list_discover_industry_chains(
+        self,
+        *,
+        market: Optional[str] = None,
+        statuses: Optional[List[str]] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        with self.get_session() as session:
+            q = select(DiscoverIndustryChain)
+            if market:
+                m = str(market).strip().lower()
+                q = q.where(or_(DiscoverIndustryChain.market == m, DiscoverIndustryChain.market == "all"))
+            if statuses:
+                q = q.where(DiscoverIndustryChain.status.in_(statuses))
+            q = q.order_by(
+                desc(DiscoverIndustryChain.sort_order),
+                desc(DiscoverIndustryChain.updated_at),
+            ).limit(max(1, min(int(limit), 200)))
+            rows = session.scalars(q).all()
+            return [self._discover_industry_chain_summary_dict(r) for r in rows]
+
+    def get_discover_industry_chain_detail(self, slug: str) -> Optional[Dict[str, Any]]:
+        slug_key = str(slug or "").strip().lower()
+        if not slug_key:
+            return None
+        with self.get_session() as session:
+            row = session.scalar(
+                select(DiscoverIndustryChain).where(DiscoverIndustryChain.slug == slug_key)
+            )
+            if row is None:
+                return None
+            base = self._discover_industry_chain_summary_dict(row)
+            base["core_stocks"] = self._discover_industry_chain_stocks(row.core_stocks_json)
+            base["created_at"] = row.created_at.isoformat() if row.created_at else None
+            return base
+
+    def create_discover_industry_chain(
+        self,
+        *,
+        slug: str,
+        name: str,
+        introduction: str = "",
+        latest_news: str = "",
+        core_stocks: Optional[List[Dict[str, Any]]] = None,
+        market: str = "cn",
+        status: str = "active",
+        sort_order: int = 0,
+    ) -> Dict[str, Any]:
+        slug_key = str(slug or "").strip().lower()
+        nm = str(name or "").strip()
+        if not slug_key or not nm:
+            raise ValueError("slug and name are required")
+
+        def _write(session: Session) -> Dict[str, Any]:
+            exists = session.scalar(
+                select(DiscoverIndustryChain.id).where(DiscoverIndustryChain.slug == slug_key)
+            )
+            if exists is not None:
+                raise ValueError("slug_already_exists")
+            stocks = core_stocks if isinstance(core_stocks, list) else []
+            row = DiscoverIndustryChain(
+                slug=slug_key,
+                name=nm[:256],
+                introduction=(introduction or "").strip() or None,
+                latest_news=(latest_news or "").strip() or None,
+                core_stocks_json=json.dumps(stocks, ensure_ascii=False),
+                market=str(market or "cn").strip().lower()[:16] or "cn",
+                status=str(status or "active").strip().lower()[:16] or "active",
+                sort_order=int(sort_order or 0),
+            )
+            session.add(row)
+            session.flush()
+            return self._discover_industry_chain_summary_dict(row)
+
+        return self._run_write_transaction("create_discover_industry_chain", _write)
+
+    def update_discover_industry_chain(
+        self,
+        slug: str,
+        *,
+        name: Optional[str] = None,
+        introduction: Optional[str] = None,
+        latest_news: Optional[str] = None,
+        core_stocks: Optional[List[Dict[str, Any]]] = None,
+        market: Optional[str] = None,
+        status: Optional[str] = None,
+        sort_order: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        slug_key = str(slug or "").strip().lower()
+        if not slug_key:
+            return None
+
+        def _write(session: Session) -> Optional[Dict[str, Any]]:
+            row = session.scalar(
+                select(DiscoverIndustryChain).where(DiscoverIndustryChain.slug == slug_key)
+            )
+            if row is None:
+                return None
+            if name is not None:
+                nm = str(name).strip()
+                if not nm:
+                    raise ValueError("name is required")
+                row.name = nm[:256]
+            if introduction is not None:
+                row.introduction = str(introduction).strip() or None
+            if latest_news is not None:
+                row.latest_news = str(latest_news).strip() or None
+            if core_stocks is not None:
+                row.core_stocks_json = json.dumps(core_stocks, ensure_ascii=False)
+            if market is not None:
+                row.market = str(market or "cn").strip().lower()[:16] or "cn"
+            if status is not None:
+                row.status = str(status or "active").strip().lower()[:16] or "active"
+            if sort_order is not None:
+                row.sort_order = int(sort_order)
+            row.updated_at = datetime.now()
+            session.flush()
+            return self._discover_industry_chain_summary_dict(row)
+
+        return self._run_write_transaction("update_discover_industry_chain", _write)
+
+    def delete_discover_industry_chain(self, slug: str) -> bool:
+        slug_key = str(slug or "").strip().lower()
+        if not slug_key:
+            return False
+
+        def _write(session: Session) -> bool:
+            row = session.scalar(
+                select(DiscoverIndustryChain).where(DiscoverIndustryChain.slug == slug_key)
+            )
+            if row is None:
+                return False
+            session.delete(row)
+            return True
+
+        return bool(self._run_write_transaction("delete_discover_industry_chain", _write))
 
     def insert_user_feedback(
         self,

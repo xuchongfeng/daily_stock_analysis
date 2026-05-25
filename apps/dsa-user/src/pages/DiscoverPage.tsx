@@ -22,6 +22,14 @@ export function DiscoverPage() {
           <span className="discover-hub-card-cta">进入板块探索 →</span>
         </Link>
 
+        <Link to="/discover/chains" className="discover-hub-card">
+          <h2 className="discover-hub-card-title">核心产业链</h2>
+          <p className="discover-hub-card-desc">
+            重点产业链结构化梳理：名称、介绍、最新新闻/进展与核心个股列表；管理员可在前端直接新增维护，并支持 CSV/文本批量导入个股。
+          </p>
+          <span className="discover-hub-card-cta">进入核心产业链 →</span>
+        </Link>
+
         <Link to="/discover/events" className="discover-hub-card">
           <h2 className="discover-hub-card-title">热点事件</h2>
           <p className="discover-hub-card-desc">
